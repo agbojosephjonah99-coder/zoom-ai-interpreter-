@@ -70,7 +70,7 @@ async function createBot(meetingUrl) {
     },
     body: JSON.stringify({
       meeting_url: meetingUrl,
-      bot_name: 'AI Interpreter 🇫🇷',
+      bot_name: 'SPLN Interpreter',
       recording_config: {
         transcript: {
           provider: {
@@ -204,6 +204,11 @@ async function handleTranscript(speakerName, text) {
     emit('translation', {
       english: text,
       french: frenchText,
+      speaker: speakerName,
+      timestamp: new Date().toISOString()
+    });
+    emit('caption', {
+      text: frenchText,
       speaker: speakerName,
       timestamp: new Date().toISOString()
     });

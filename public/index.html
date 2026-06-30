@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Zoom Interpreter Bot</title>
+<title>SPLN Interpreter</title>
 <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4.7.5/dist/socket.io.min.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -257,6 +257,32 @@
   .lang-en { background: rgba(245,158,11,.15); color: var(--amber); }
   .lang-fr { background: var(--green-bg); color: var(--green); }
 
+  .caption-card {
+    margin: 1rem 1.5rem 0;
+    padding: 1rem 1.1rem;
+    border: 1px solid rgba(34,197,94,.25);
+    background: linear-gradient(135deg, rgba(34,197,94,.16), rgba(79,124,255,.12));
+    border-radius: 12px;
+  }
+  .caption-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--green);
+    margin-bottom: 6px;
+  }
+  .caption-text {
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.45;
+  }
+  .caption-speaker {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
   .empty-state {
     text-align: center;
     padding: 4rem 2rem;
@@ -302,12 +328,12 @@
 
 <header>
   <div class="logo-mark">🎙️</div>
-  <h1>Zoom Interpreter Bot</h1>
+  <h1>SPLN Interpreter</h1>
   <div class="status-pill">
     <span class="dot idle" id="headerDot"></span>
     <span id="headerStatus">Idle</span>
   </div>
-  <span class="sub">EN → FR · Powered by Claude + ElevenLabs</span>
+  <span class="sub">EN → FR · French captions + voice interpretation</span>
 </header>
 
 <main>
@@ -383,6 +409,11 @@
         <span></span><span></span><span></span><span></span>
       </div>
     </div>
+    <div class="caption-card" id="captionCard" style="display:none">
+      <div class="caption-label">French caption</div>
+      <div class="caption-text" id="captionText">Waiting for speech…</div>
+      <div class="caption-speaker" id="captionSpeaker">The translated French caption will appear here.</div>
+    </div>
     <div class="feed" id="feed">
       <div class="empty-state" id="emptyState">
         <div class="empty-icon">🎙️</div>
@@ -419,9 +450,19 @@ socket.on('status', ({ status, message }) => {
   }
 });
 
+function showCaption(text, speaker) {
+  const captionCard = document.getElementById('captionCard');
+  const captionText = document.getElementById('captionText');
+  const captionSpeaker = document.getElementById('captionSpeaker');
+  captionCard.style.display = 'block';
+  captionText.textContent = text;
+  captionSpeaker.textContent = `${esc(speaker)} • French caption`;
+}
+
 socket.on('translation', ({ english, french, speaker, timestamp }) => {
   translationCount++;
   document.getElementById('statCount').textContent = translationCount;
+  showCaption(french, speaker);
   const empty = document.getElementById('emptyState');
   if (empty) empty.remove();
 
@@ -438,6 +479,10 @@ socket.on('translation', ({ english, french, speaker, timestamp }) => {
   `;
   const feed = document.getElementById('feed');
   feed.insertBefore(entry, feed.firstChild);
+});
+
+socket.on('caption', ({ text, speaker }) => {
+  showCaption(text, speaker || 'Speaker');
 });
 
 socket.on('stats', ({ total }) => {
