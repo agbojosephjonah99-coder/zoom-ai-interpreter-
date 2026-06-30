@@ -71,14 +71,6 @@ async function createBot(meetingUrl) {
     body: JSON.stringify({
       meeting_url: meetingUrl,
       bot_name: 'AI Interpreter 🇫🇷',
-      transcription_options: {
-        provider: 'whisper',
-        whisper: {
-          api_key: process.env.OPENAI_API_KEY,
-          model: 'whisper-1',
-          language: botState.sourceLanguage,
-        }
-      },
       real_time_transcription: {
         destination_url: `${process.env.WEBHOOK_URL}/webhook/transcript`,
         partial_results: false,
