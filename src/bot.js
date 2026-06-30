@@ -6,6 +6,7 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const serverless = require('serverless-http');
 const fetch = (...args) => import('node-fetch').then(({ default: f }) => f(...args));
 const path = require('path');
 require('dotenv').config();
@@ -284,4 +285,9 @@ app.post('/api/translate', async (req, res) => {
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`\n🎙️  Zoom Interpreter Bot running at http://localhost:${PORT}\n`));
+
+if (require.main === module) {
+  server.listen(PORT, () => console.log(`\n🎙️  Zoom Interpreter Bot running at http://localhost:${PORT}\n`));
+}
+
+module.exports = serverless(app);
