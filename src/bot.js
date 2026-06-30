@@ -362,11 +362,21 @@ app.post('/api/join', async (req, res) => {
 });
 
 app.post('/api/leave', async (req, res) => {
-  if (!botState.botId && !botState.joinPoller) return res.status(400).json({ error: 'No active bot' });
+  const hasActiveBot = Boolean(botState.botId || botState.joinPoller || botState.status !== 'idle');
+  if (!hasActiveBot) {
+    resetBotSession();
+    updateStatus('idle', 'Bot has left the meeting');
+    return res.json({ success: true, alreadyInactive: true });
+  }
+
   try {
-    if (botState.botId) {
-      await stopBot(botState.botId);
+    const botId = botState.botId;
+    if (botId) {
+      void stopBot(botId).catch((err) => {
+        console.error('Recall leave request failed:', err);
+      });
     }
+
     resetBotSession();
     updateStatus('idle', 'Bot has left the meeting');
     res.json({ success: true });

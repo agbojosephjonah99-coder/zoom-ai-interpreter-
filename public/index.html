@@ -525,9 +525,18 @@ async function joinMeeting() {
 }
 
 async function leaveMeeting() {
-  const res = await fetch('/api/leave', { method: 'POST' });
-  const data = await res.json();
-  if (!res.ok) alert('Error: ' + data.error);
+  const btn = document.getElementById('leaveBtn');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/leave', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Unable to remove bot from meeting');
+  } catch (err) {
+    console.error(err);
+    alert('Error: ' + err.message);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function testTranslate() {
