@@ -39,6 +39,13 @@ function updateStatus(status, message) {
   console.log(`[${status.toUpperCase()}] ${message}`);
 }
 
+function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal })
+    .finally(() => clearTimeout(timeoutId));
+}
+
 function getMissingEnvVars() {
   const missing = [];
   if (!process.env.RECALL_API_KEY || process.env.RECALL_API_KEY.includes('your_') || process.env.RECALL_API_KEY.includes('your-recall')) {
@@ -55,7 +62,7 @@ function getMissingEnvVars() {
 
 // ── Recall.ai ────────────────────────────────────────────────────────────────
 async function createBot(meetingUrl) {
-  const res = await fetch('https://us-west-2.recall.ai/api/v1/bot/', {
+  const res = await fetchWithTimeout('https://us-west-2.recall.ai/api/v1/bot/', {
     method: 'POST',
     headers: {
       'Authorization': `Token ${process.env.RECALL_API_KEY}`,
@@ -87,14 +94,14 @@ async function createBot(meetingUrl) {
 }
 
 async function getBotStatus(botId) {
-  const res = await fetch(`https://us-west-2.recall.ai/api/v1/bot/${botId}/`, {
+  const res = await fetchWithTimeout(`https://us-west-2.recall.ai/api/v1/bot/${botId}/`, {
     headers: { 'Authorization': `Token ${process.env.RECALL_API_KEY}` }
   });
   return res.json();
 }
 
 async function sendAudioToBot(botId, audioBase64) {
-  const res = await fetch(`https://us-west-2.recall.ai/api/v1/bot/${botId}/output_audio/`, {
+  const res = await fetchWithTimeout(`https://us-west-2.recall.ai/api/v1/bot/${botId}/output_audio/`, {
     method: 'POST',
     headers: {
       'Authorization': `Token ${process.env.RECALL_API_KEY}`,
@@ -106,7 +113,7 @@ async function sendAudioToBot(botId, audioBase64) {
 }
 
 async function stopBot(botId) {
-  await fetch(`https://us-west-2.recall.ai/api/v1/bot/${botId}/leave_call/`, {
+  await fetchWithTimeout(`https://us-west-2.recall.ai/api/v1/bot/${botId}/leave_call/`, {
     method: 'POST',
     headers: { 'Authorization': `Token ${process.env.RECALL_API_KEY}` }
   });
@@ -120,7 +127,7 @@ async function translateWithGPT(text) {
     technical: 'Use technical/conference register. Preserve all terminology, acronyms, and proper nouns exactly.',
   }[botState.register] || '';
 
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+  const res = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
@@ -150,7 +157,7 @@ async function translateWithGPT(text) {
 
 // ── OpenAI: Text-to-Speech ────────────────────────────────────────────────────
 async function synthesizeFrench(frenchText) {
-  const res = await fetch('https://api.openai.com/v1/audio/speech', {
+  const res = await fetchWithTimeout('https://api.openai.com/v1/audio/speech', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
