@@ -169,8 +169,11 @@ async function translateWithGPT(text) {
   });
 
   if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`GPT-4o translation failed: ${err}`);
+    const errText = await res.text();
+    const message = errText.includes('invalid_api_key')
+      ? 'OpenAI API key is invalid or missing in the deployed environment. Please set OPENAI_API_KEY in Vercel.'
+      : `GPT-4o translation failed: ${errText}`;
+    throw new Error(message);
   }
   const data = await res.json();
   return data.choices?.[0]?.message?.content?.trim() || '';
@@ -194,8 +197,11 @@ async function synthesizeFrench(frenchText) {
   });
 
   if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`OpenAI TTS failed: ${err}`);
+    const errText = await res.text();
+    const message = errText.includes('invalid_api_key')
+      ? 'OpenAI API key is invalid or missing in the deployed environment. Please set OPENAI_API_KEY in Vercel.'
+      : `OpenAI TTS failed: ${errText}`;
+    throw new Error(message);
   }
   const buffer = await res.arrayBuffer();
   return Buffer.from(buffer).toString('base64');
