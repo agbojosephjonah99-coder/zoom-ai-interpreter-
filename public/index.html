@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zoom Interpreter Bot</title>
+<script src="https://cdn.jsdelivr.net/npm/socket.io-client@4.7.5/dist/socket.io.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: rgba(255,255,255,0.08);
+    --border-strong: rgba(255,255,255,0.15);
+    --text: #e8eaf0;
+    --muted: #7a7f9a;
+    --accent: #4f7cff;
+    --accent-bg: rgba(79,124,255,0.12);
+    --green: #22c55e;
+    --green-bg: rgba(34,197,94,0.12);
+    --red: #ef4444;
+    --red-bg: rgba(239,68,68,0.12);
+    --amber: #f59e0b;
+    --amber-bg: rgba(245,158,11,0.12);
+    --radius: 10px;
+    --font: 'Inter', system-ui, sans-serif;
+  }
+
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    min-height: 100vh;
+    line-height: 1.6;
+  }
+
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 0 2rem;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 100;
+  }
+
+  .logo-mark {
+    width: 32px; height: 32px;
+    background: var(--accent);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+
+  header h1 { font-size: 15px; font-weight: 600; }
+  header .sub { font-size: 12px; color: var(--muted); margin-left: auto; }
+
+  .status-pill {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--muted);
+  }
+  .dot.idle { background: var(--muted); }
+  .dot.joining { background: var(--amber); animation: pulse 1s infinite; }
+  .dot.listening { background: var(--green); animation: pulse 1.5s infinite; }
+  .dot.interpreting { background: var(--accent); animation: pulse 0.8s infinite; }
+  .dot.error { background: var(--red); }
+
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.3} }
+
+  main {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    gap: 0;
+    height: calc(100vh - 56px);
+  }
+
+  .sidebar {
+    border-right: 1px solid var(--border);
+    padding: 1.5rem;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+  }
+
+  .card-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--muted);
+    margin-bottom: 1rem;
+  }
+
+  label {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 5px;
+    margin-top: 12px;
+  }
+  label:first-of-type { margin-top: 0; }
+
+  input[type="text"], select, textarea {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    padding: 9px 12px;
+    outline: none;
+    transition: border-color .15s;
+  }
+  input[type="text"]:focus, select:focus { border-color: var(--accent); }
+  select option { background: var(--surface2); }
+
+  .btn {
+    cursor: pointer;
+    border-radius: 8px;
+    font-family: var(--font);
+    font-size: 13px;
+    font-weight: 500;
+    padding: 9px 16px;
+    border: none;
+    transition: opacity .15s, transform .1s;
+    width: 100%;
+    margin-top: 8px;
+  }
+  .btn:active { transform: scale(.98); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+
+  .btn-join {
+    background: var(--accent);
+    color: #fff;
+  }
+  .btn-leave {
+    background: var(--red-bg);
+    color: var(--red);
+    border: 1px solid rgba(239,68,68,.25);
+  }
+
+  .stat-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .stat {
+    background: var(--surface2);
+    border-radius: 8px;
+    padding: 10px 14px;
+  }
+  .stat-num { font-size: 22px; font-weight: 600; }
+  .stat-label { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  /* Live feed */
+  .feed {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .feed-header {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .entry {
+    border-bottom: 1px solid var(--border);
+    padding: 1rem 0;
+    animation: fadeIn .3s ease;
+  }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none} }
+
+  .entry-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .speaker-badge {
+    background: var(--accent-bg);
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .entry-time { font-size: 11px; color: var(--muted); margin-left: auto; }
+
+  .entry-en {
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 6px;
+    line-height: 1.5;
+  }
+  .entry-fr {
+    font-size: 14px;
+    color: var(--text);
+    font-weight: 500;
+    line-height: 1.6;
+  }
+
+  .lang-tag {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-right: 6px;
+    vertical-align: 1px;
+  }
+  .lang-en { background: rgba(245,158,11,.15); color: var(--amber); }
+  .lang-fr { background: var(--green-bg); color: var(--green); }
+
+  .empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: var(--muted);
+  }
+  .empty-icon { font-size: 40px; margin-bottom: 1rem; opacity: .4; }
+  .empty-state p { font-size: 13px; line-height: 1.7; }
+
+  .status-msg {
+    font-size: 12px;
+    color: var(--muted);
+    padding: 8px 0;
+    border-top: 1px solid var(--border);
+    margin-top: auto;
+  }
+
+  .wave {
+    display: flex; align-items: center; gap: 2px; height: 16px;
+  }
+  .wave span {
+    width: 3px; border-radius: 2px; background: var(--green);
+    animation: wave .8s ease-in-out infinite;
+  }
+  .wave span:nth-child(2){animation-delay:.1s}
+  .wave span:nth-child(3){animation-delay:.2s}
+  .wave span:nth-child(4){animation-delay:.3s}
+  @keyframes wave{0%,100%{height:3px}50%{height:14px}}
+
+  .test-area { display: flex; flex-direction: column; gap: 8px; }
+  .test-area textarea { resize: vertical; min-height: 70px; }
+  .test-result {
+    background: var(--surface2);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 13px;
+    color: var(--green);
+    display: none;
+    line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-mark">🎙️</div>
+  <h1>Zoom Interpreter Bot</h1>
+  <div class="status-pill">
+    <span class="dot idle" id="headerDot"></span>
+    <span id="headerStatus">Idle</span>
+  </div>
+  <span class="sub">EN → FR · Powered by Claude + ElevenLabs</span>
+</header>
+
+<main>
+  <!-- Sidebar -->
+  <aside class="sidebar">
+
+    <!-- Join meeting -->
+    <div class="card">
+      <div class="card-title">Join meeting as interpreter</div>
+      <label>Zoom meeting URL</label>
+      <input type="text" id="meetingUrl" placeholder="https://zoom.us/j/123456789?pwd=…">
+      <label>Interpretation register</label>
+      <select id="register">
+        <option value="formal">Formal (vous-form)</option>
+        <option value="neutral">Neutral</option>
+        <option value="technical">Technical / conference</option>
+      </select>
+      <label>Source language</label>
+      <select id="sourceLang">
+        <option value="en">English</option>
+        <option value="es">Spanish</option>
+        <option value="de">German</option>
+        <option value="pt">Portuguese</option>
+      </select>
+      <label>French voice (OpenAI TTS)</label>
+      <select id="voice">
+        <option value="alloy">Alloy — neutral, clear</option>
+        <option value="nova">Nova — warm, natural</option>
+        <option value="shimmer">Shimmer — soft, expressive</option>
+        <option value="echo">Echo — smooth, steady</option>
+        <option value="fable">Fable — authoritative</option>
+        <option value="onyx">Onyx — deep, rich</option>
+      </select>
+      <button class="btn btn-join" id="joinBtn" onclick="joinMeeting()">Send bot into meeting</button>
+      <button class="btn btn-leave" id="leaveBtn" onclick="leaveMeeting()" disabled>Remove bot from meeting</button>
+    </div>
+
+    <!-- Stats -->
+    <div class="card">
+      <div class="card-title">Session stats</div>
+      <div class="stat-row">
+        <div class="stat">
+          <div class="stat-num" id="statCount">0</div>
+          <div class="stat-label">Translations</div>
+        </div>
+        <div class="stat">
+          <div class="stat-num" id="statTime">0m</div>
+          <div class="stat-label">Session time</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Manual test -->
+    <div class="card">
+      <div class="card-title">Test translation (no bot needed)</div>
+      <div class="test-area">
+        <textarea id="testInput" placeholder="Type English text to test…"></textarea>
+        <button class="btn btn-join" onclick="testTranslate()" style="margin-top:0">Translate & play audio</button>
+        <div class="test-result" id="testResult"></div>
+      </div>
+    </div>
+
+    <!-- Status -->
+    <div class="status-msg" id="statusMsg">Ready — enter a meeting URL and click send</div>
+
+  </aside>
+
+  <!-- Live feed -->
+  <div class="panel">
+    <div class="feed-header">
+      <span>Live interpretation feed</span>
+      <div class="wave" id="liveWave" style="display:none">
+        <span></span><span></span><span></span><span></span>
+      </div>
+    </div>
+    <div class="feed" id="feed">
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">🎙️</div>
+        <p>Interpretation will appear here in real time.<br>Send the bot into a meeting to get started.</p>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+const socket = io();
+let sessionStart = null;
+let timerInterval = null;
+let translationCount = 0;
+
+// ── Socket events ─────────────────────────────────────────────────────────
+socket.on('status', ({ status, message }) => {
+  updateHeader(status, message);
+  document.getElementById('statusMsg').textContent = message;
+
+  const joining = status === 'joining';
+  const active = status === 'listening' || status === 'interpreting';
+  document.getElementById('joinBtn').disabled = joining || active;
+  document.getElementById('leaveBtn').disabled = !active && status !== 'joining';
+  document.getElementById('liveWave').style.display = status === 'listening' ? 'flex' : 'none';
+
+  if (active && !sessionStart) {
+    sessionStart = Date.now();
+    timerInterval = setInterval(updateTimer, 1000);
+  }
+  if (status === 'idle' || status === 'error') {
+    clearInterval(timerInterval);
+    sessionStart = null;
+  }
+});
+
+socket.on('translation', ({ english, french, speaker, timestamp }) => {
+  translationCount++;
+  document.getElementById('statCount').textContent = translationCount;
+  const empty = document.getElementById('emptyState');
+  if (empty) empty.remove();
+
+  const time = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const entry = document.createElement('div');
+  entry.className = 'entry';
+  entry.innerHTML = `
+    <div class="entry-meta">
+      <span class="speaker-badge">${esc(speaker)}</span>
+      <span class="entry-time">${time}</span>
+    </div>
+    <div class="entry-en"><span class="lang-tag lang-en">EN</span>${esc(english)}</div>
+    <div class="entry-fr"><span class="lang-tag lang-fr">FR</span>${esc(french)}</div>
+  `;
+  const feed = document.getElementById('feed');
+  feed.insertBefore(entry, feed.firstChild);
+});
+
+socket.on('stats', ({ total }) => {
+  translationCount = total;
+  document.getElementById('statCount').textContent = total;
+});
+
+// ── UI helpers ────────────────────────────────────────────────────────────
+function updateHeader(status, message) {
+  const dot = document.getElementById('headerDot');
+  dot.className = 'dot ' + status;
+  document.getElementById('headerStatus').textContent =
+    { idle: 'Idle', joining: 'Joining…', listening: 'Listening', interpreting: 'Interpreting…', error: 'Error' }[status] || status;
+}
+
+function updateTimer() {
+  if (!sessionStart) return;
+  const secs = Math.floor((Date.now() - sessionStart) / 1000);
+  const m = Math.floor(secs / 60), s = secs % 60;
+  document.getElementById('statTime').textContent = m + 'm ' + String(s).padStart(2, '0') + 's';
+}
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ── API calls ─────────────────────────────────────────────────────────────
+async function joinMeeting() {
+  const meetingUrl = document.getElementById('meetingUrl').value.trim();
+  if (!meetingUrl) { alert('Please enter a Zoom meeting URL'); return; }
+  const register = document.getElementById('register').value;
+  const sourceLanguage = document.getElementById('sourceLang').value;
+  const voice = document.getElementById('voice').value;
+
+  const res = await fetch('/api/join', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ meetingUrl, register, sourceLanguage, voice })
+  });
+  const data = await res.json();
+  if (!res.ok) alert('Error: ' + data.error);
+}
+
+async function leaveMeeting() {
+  const res = await fetch('/api/leave', { method: 'POST' });
+  const data = await res.json();
+  if (!res.ok) alert('Error: ' + data.error);
+}
+
+async function testTranslate() {
+  const text = document.getElementById('testInput').value.trim();
+  if (!text) return;
+  const result = document.getElementById('testResult');
+  result.style.display = 'block';
+  result.textContent = 'Translating…';
+  result.style.color = 'var(--muted)';
+
+  const res = await fetch('/api/translate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, register: document.getElementById('register').value })
+  });
+  const data = await res.json();
+  if (res.ok) {
+    result.textContent = '🇫🇷 ' + data.french;
+    result.style.color = 'var(--green)';
+    // Play audio
+    const audio = new Audio('data:audio/mp3;base64,' + data.audioBase64);
+    audio.play();
+  } else {
+    result.textContent = 'Error: ' + data.error;
+    result.style.color = 'var(--red)';
+  }
+}
+
+// Load initial state
+fetch('/api/state').then(r => r.json()).then(state => {
+  updateHeader(state.status, '');
+  document.getElementById('statCount').textContent = state.totalTranslations || 0;
+});
+</script>
+</body>
+</html>
