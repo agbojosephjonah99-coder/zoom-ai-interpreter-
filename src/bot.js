@@ -6,7 +6,6 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const serverless = require('serverless-http');
 const fetch = (...args) => import('node-fetch').then(({ default: f }) => f(...args));
 const path = require('path');
 require('dotenv').config();
@@ -38,6 +37,20 @@ function updateStatus(status, message) {
   botState.status = status;
   emit('status', { status, message, timestamp: new Date().toISOString() });
   console.log(`[${status.toUpperCase()}] ${message}`);
+}
+
+function getMissingEnvVars() {
+  const missing = [];
+  if (!process.env.RECALL_API_KEY || process.env.RECALL_API_KEY.includes('your_') || process.env.RECALL_API_KEY.includes('your-recall')) {
+    missing.push('RECALL_API_KEY');
+  }
+  if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY.includes('your_') || process.env.OPENAI_API_KEY.includes('your-openai')) {
+    missing.push('OPENAI_API_KEY');
+  }
+  if (!process.env.WEBHOOK_URL || process.env.WEBHOOK_URL.includes('your-domain') || process.env.WEBHOOK_URL.includes('example.com')) {
+    missing.push('WEBHOOK_URL');
+  }
+  return missing;
 }
 
 // ── Recall.ai ────────────────────────────────────────────────────────────────
@@ -225,6 +238,13 @@ app.post('/api/join', async (req, res) => {
   botState.totalTranslations = 0;
   botState.sessionLog = [];
 
+  const missingEnv = getMissingEnvVars();
+  if (missingEnv.length) {
+    const message = `Missing or placeholder environment values: ${missingEnv.join(', ')}. Set them in .env or Vercel and restart the app.`;
+    updateStatus('error', message);
+    return res.status(500).json({ error: message });
+  }
+
   try {
     updateStatus('joining', 'Sending bot into meeting…');
     const bot = await createBot(meetingUrl);
@@ -290,4 +310,4 @@ if (require.main === module) {
   server.listen(PORT, () => console.log(`\n🎙️  Zoom Interpreter Bot running at http://localhost:${PORT}\n`));
 }
 
-module.exports = serverless(app);
+module.exports = app;
