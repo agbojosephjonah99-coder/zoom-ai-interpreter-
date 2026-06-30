@@ -71,10 +71,26 @@ async function createBot(meetingUrl) {
     body: JSON.stringify({
       meeting_url: meetingUrl,
       bot_name: 'AI Interpreter 🇫🇷',
-      real_time_transcription: {
-        destination_url: `${process.env.WEBHOOK_URL}/webhook/transcript`,
-        partial_results: false,
-      },
+      recording_config: {
+        transcript: {
+          provider: {
+            recallai_streaming: {
+              mode: 'prioritize_low_latency',
+              language_code: botState.sourceLanguage || 'en',
+            }
+          },
+          diarization: {
+            use_separate_streams_when_available: true,
+          }
+        },
+        realtime_endpoints: [
+          {
+            type: 'webhook',
+            url: `${process.env.WEBHOOK_URL}/webhook/transcript`,
+            events: ['transcript.data'],
+          }
+        ]
+      }
     })
   });
 
