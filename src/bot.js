@@ -255,13 +255,49 @@ async function handleTranscript(speakerName, text) {
 }
 
 // ── Webhook: receive transcripts from Recall.ai ───────────────────────────────
+function extractTranscriptPayload(payload) {
+  const candidates = [
+    payload?.data?.data,
+    payload?.transcript,
+    payload?.data?.transcript,
+    payload?.data?.payload?.transcript,
+    payload?.data?.payload?.data,
+  ];
+
+  const transcript = candidates.find(candidate => candidate && (Array.isArray(candidate.words) || candidate?.speaker || candidate?.participant));
+  if (!transcript) return null;
+
+  const words = Array.isArray(transcript.words)
+    ? transcript.words
+    : (Array.isArray(transcript?.data?.words) ? transcript.data.words : []);
+
+  const speaker = transcript.speaker || transcript.participant?.name || transcript.participant?.id || 'Speaker';
+  const text = words
+    .map(word => (typeof word === 'string' ? word : word?.text))
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+
+  return { speaker, text };
+}
+
 app.post('/webhook/transcript', (req, res) => {
   res.sendStatus(200);
-  const { transcript } = req.body || {};
-  if (!transcript) return;
-  const { speaker, words } = transcript;
-  const text = words?.map(w => w.text).join(' ').trim();
-  if (text) handleTranscript(speaker || 'Speaker', text);
+  void (async () => {
+    try {
+      const payload = req.body || {};
+      const extracted = extractTranscriptPayload(payload);
+
+      if (!extracted?.text) {
+        console.log('[WEBHOOK] No transcript text found in payload:', JSON.stringify(payload).slice(0, 2000));
+        return;
+      }
+
+      await handleTranscript(extracted.speaker || 'Speaker', extracted.text);
+    } catch (err) {
+      console.error('Webhook processing failed:', err);
+    }
+  })();
 });
 
 // ── REST API ──────────────────────────────────────────────────────────────────
