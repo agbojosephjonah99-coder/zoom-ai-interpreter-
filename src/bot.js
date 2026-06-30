@@ -72,8 +72,8 @@ async function createBot(meetingUrl) {
       meeting_url: meetingUrl,
       bot_name: 'AI Interpreter 🇫🇷',
       transcription_options: {
-        provider: 'openai',
-        openai: {
+        provider: 'whisper',
+        whisper: {
           api_key: process.env.OPENAI_API_KEY,
           model: 'whisper-1',
           language: botState.sourceLanguage,
