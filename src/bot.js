@@ -29,6 +29,7 @@ let botState = {
   lastTranslation: '',
   sessionLog: [],
   totalTranslations: 0,
+  joinPoller: null,
 };
 
 function emit(event, data) { io.emit(event, data); }
@@ -37,6 +38,18 @@ function updateStatus(status, message) {
   botState.status = status;
   emit('status', { status, message, timestamp: new Date().toISOString() });
   console.log(`[${status.toUpperCase()}] ${message}`);
+}
+
+function resetBotSession() {
+  if (botState.joinPoller) {
+    clearInterval(botState.joinPoller);
+    botState.joinPoller = null;
+  }
+  botState.botId = null;
+  botState.meetingUrl = null;
+  botState.lastTranslation = '';
+  botState.sessionLog = [];
+  botState.totalTranslations = 0;
 }
 
 function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
@@ -249,7 +262,9 @@ app.post('/webhook/transcript', (req, res) => {
 app.post('/api/join', async (req, res) => {
   const { meetingUrl, register, sourceLanguage, voice } = req.body;
   if (!meetingUrl) return res.status(400).json({ error: 'meetingUrl required' });
-  if (botState.botId) return res.status(400).json({ error: 'Bot already active' });
+  if (botState.botId || botState.status === 'joining' || botState.status === 'listening' || botState.status === 'interpreting') {
+    return res.status(400).json({ error: 'Bot already active or joining' });
+  }
 
   botState.meetingUrl = meetingUrl;
   botState.register = register || 'formal';
@@ -272,17 +287,27 @@ app.post('/api/join', async (req, res) => {
 
     // Poll until bot is confirmed in the call
     let attempts = 0;
-    const poll = setInterval(async () => {
+    botState.joinPoller = setInterval(async () => {
+      if (!botState.botId) return;
       attempts++;
-      const status = await getBotStatus(botState.botId);
-      const code = status.status_changes?.slice(-1)[0]?.code;
-      if (code === 'in_call_not_recording' || code === 'in_call_recording') {
-        clearInterval(poll);
-        updateStatus('listening', 'Bot is in the meeting and listening…');
-      } else if (code === 'fatal' || attempts > 30) {
-        clearInterval(poll);
-        updateStatus('error', 'Bot failed to join the meeting');
-        botState.botId = null;
+      try {
+        const status = await getBotStatus(botState.botId);
+        const code = status.status_changes?.slice(-1)[0]?.code;
+        if (code === 'in_call_not_recording' || code === 'in_call_recording') {
+          clearInterval(botState.joinPoller);
+          botState.joinPoller = null;
+          updateStatus('listening', 'Bot is in the meeting and listening…');
+        } else if (code === 'fatal' || attempts > 30) {
+          clearInterval(botState.joinPoller);
+          botState.joinPoller = null;
+          updateStatus('error', 'Bot failed to join the meeting');
+          resetBotSession();
+        }
+      } catch (err) {
+        clearInterval(botState.joinPoller);
+        botState.joinPoller = null;
+        updateStatus('error', `Bot status check failed: ${err.message}`);
+        resetBotSession();
       }
     }, 3000);
 
@@ -295,13 +320,17 @@ app.post('/api/join', async (req, res) => {
 });
 
 app.post('/api/leave', async (req, res) => {
-  if (!botState.botId) return res.status(400).json({ error: 'No active bot' });
+  if (!botState.botId && !botState.joinPoller) return res.status(400).json({ error: 'No active bot' });
   try {
-    await stopBot(botState.botId);
-    botState.botId = null;
+    if (botState.botId) {
+      await stopBot(botState.botId);
+    }
+    resetBotSession();
     updateStatus('idle', 'Bot has left the meeting');
     res.json({ success: true });
   } catch (err) {
+    resetBotSession();
+    updateStatus('error', err.message);
     res.status(500).json({ error: err.message });
   }
 });
