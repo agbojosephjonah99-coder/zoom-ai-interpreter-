@@ -96,14 +96,15 @@ npm start
 
 1. **Host enables interpretation** — Zoom meeting → More → Language Interpretation → Enable → add French channel
 2. **Send the bot** — paste meeting URL in the dashboard → click "Send bot into meeting"
-3. **Move bot to interpreter slot** — host moves "AI Interpreter 🇫🇷" to the French interpreter channel
-4. **Bot interprets live** — listens in English, speaks French automatically
+3. **Assign the AI interpreter** — the host should move "AI Interpreter 🇫🇷" into the French interpreter channel in Zoom's interpretation settings.
+4. **Bot interprets live** — the bot listens in English, displays captions, and speaks French audio into the interpreter room.
 
 ---
 
 ## Troubleshooting
 
-**Bot doesn't join** → check RECALL_API_KEY and that the Zoom meeting is active
+**Bot doesn't join** → check RECALL_API_KEY and that the Zoom meeting is active.
+**No interpreter assignment** → confirm the host has moved the bot into the French interpreter channel.
 
 **No transcripts** → check ngrok is running and WEBHOOK_URL is correct in .env
 

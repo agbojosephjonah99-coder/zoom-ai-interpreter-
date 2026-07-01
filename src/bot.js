@@ -22,10 +22,12 @@ let botState = {
   status: 'idle',        // idle | joining | listening | interpreting | error
   botId: null,
   meetingUrl: null,
+  botName: process.env.BOT_NAME || 'AI Interpreter',
   sourceLanguage: 'en',
   targetLanguage: 'fr',
   register: 'formal',
   voice: 'alloy',        // OpenAI TTS voice
+  translationModel: 'gpt-4o-mini',
   lastTranslation: '',
   sessionLog: [],
   totalTranslations: 0,
@@ -83,7 +85,7 @@ async function createBot(meetingUrl) {
     },
     body: JSON.stringify({
       meeting_url: meetingUrl,
-      bot_name: 'SPLN Interpreter',
+      bot_name: botState.botName || 'AI Interpreter',
       recording_config: {
         transcript: {
           provider: {
@@ -140,7 +142,7 @@ async function stopBot(botId) {
   });
 }
 
-// ── OpenAI: Translate with GPT-4o ────────────────────────────────────────────
+// ── OpenAI: Translate with GPT ────────────────────────────────────────────
 async function translateWithGPT(text) {
   const registerNote = {
     formal:    'Use formal vous-form French suitable for professional meetings. Preserve speaker intent exactly.',
@@ -148,6 +150,7 @@ async function translateWithGPT(text) {
     technical: 'Use technical/conference register. Preserve all terminology, acronyms, and proper nouns exactly.',
   }[botState.register] || '';
 
+  const model = process.env.OPENAI_TRANSLATION_MODEL || botState.translationModel;
   const res = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -155,9 +158,11 @@ async function translateWithGPT(text) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'gpt-4o',
-      max_tokens: 1024,
-      temperature: 0.2,
+      model,
+      max_tokens: 512,
+      temperature: 0.0,
+      top_p: 1,
+      n: 1,
       messages: [
         {
           role: 'system',
@@ -213,9 +218,10 @@ async function handleTranscript(speakerName, text) {
 
   updateStatus('interpreting', `Translating: "${text.slice(0, 60)}…"`);
   emit('transcript', { speaker: speakerName, text, timestamp: new Date().toISOString() });
+  emit('caption', { text: 'Translating…', speaker: speakerName, timestamp: new Date().toISOString() });
 
   try {
-    // 1. Translate with GPT-4o
+    // 1. Translate with GPT
     const frenchText = await translateWithGPT(text);
     botState.lastTranslation = frenchText;
     botState.totalTranslations++;
@@ -256,29 +262,54 @@ async function handleTranscript(speakerName, text) {
 
 // ── Webhook: receive transcripts from Recall.ai ───────────────────────────────
 function extractTranscriptPayload(payload) {
-  const candidates = [
-    payload?.data?.data,
-    payload?.transcript,
-    payload?.data?.transcript,
-    payload?.data?.payload?.transcript,
-    payload?.data?.payload?.data,
-  ];
+  const queue = [payload];
+  const seen = new Set();
 
-  const transcript = candidates.find(candidate => candidate && (Array.isArray(candidate.words) || candidate?.speaker || candidate?.participant));
-  if (!transcript) return null;
+  while (queue.length) {
+    const current = queue.shift();
+    if (!current || typeof current !== 'object' || seen.has(current)) continue;
+    seen.add(current);
 
-  const words = Array.isArray(transcript.words)
-    ? transcript.words
-    : (Array.isArray(transcript?.data?.words) ? transcript.data.words : []);
+    if (Array.isArray(current)) {
+      queue.push(...current);
+      continue;
+    }
 
-  const speaker = transcript.speaker || transcript.participant?.name || transcript.participant?.id || 'Speaker';
-  const text = words
-    .map(word => (typeof word === 'string' ? word : word?.text))
-    .filter(Boolean)
-    .join(' ')
-    .trim();
+    const transcript = current?.transcript || current?.data?.transcript || current?.payload?.transcript || current?.data?.data?.transcript || current?.data?.payload?.transcript || current?.payload?.data?.transcript;
+    if (transcript && (Array.isArray(transcript.words) || transcript?.speaker || transcript?.participant || typeof transcript?.text === 'string' || Array.isArray(transcript?.data?.words))) {
+      const words = Array.isArray(transcript.words)
+        ? transcript.words
+        : (Array.isArray(transcript?.data?.words) ? transcript.data.words : []);
+      const text = words
+        .map(word => (typeof word === 'string' ? word : word?.text || word?.word))
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+      const directText = typeof transcript?.text === 'string' ? transcript.text.trim() : '';
+      const speaker = transcript.speaker || transcript.participant?.name || transcript.participant?.id || 'Speaker';
+      return { speaker, text: text || directText || (typeof transcript?.data?.text === 'string' ? transcript.data.text.trim() : '') };
+    }
 
-  return { speaker, text };
+    if (current?.words || current?.speaker || current?.participant || typeof current?.text === 'string') {
+      const words = Array.isArray(current.words)
+        ? current.words
+        : (Array.isArray(current?.data?.words) ? current.data.words : []);
+      const text = words
+        .map(word => (typeof word === 'string' ? word : word?.text || word?.word))
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+      const directText = typeof current?.text === 'string' ? current.text.trim() : '';
+      const speaker = current.speaker || current.participant?.name || current.participant?.id || 'Speaker';
+      if (text || directText) {
+        return { speaker, text: text || directText || (typeof current?.data?.text === 'string' ? current.data.text.trim() : '') };
+      }
+    }
+
+    queue.push(current?.data, current?.payload, current?.content, current?.result);
+  }
+
+  return null;
 }
 
 app.post('/webhook/transcript', (req, res) => {
@@ -302,7 +333,7 @@ app.post('/webhook/transcript', (req, res) => {
 
 // ── REST API ──────────────────────────────────────────────────────────────────
 app.post('/api/join', async (req, res) => {
-  const { meetingUrl, register, sourceLanguage, voice } = req.body;
+  const { meetingUrl, register, sourceLanguage, voice, botName } = req.body;
   if (!meetingUrl) return res.status(400).json({ error: 'meetingUrl required' });
   if (botState.botId || botState.status === 'joining' || botState.status === 'listening' || botState.status === 'interpreting') {
     return res.status(400).json({ error: 'Bot already active or joining' });
@@ -312,6 +343,7 @@ app.post('/api/join', async (req, res) => {
   botState.register = register || 'formal';
   botState.sourceLanguage = sourceLanguage || 'en';
   botState.voice = voice || 'alloy';
+  botState.botName = botName || process.env.BOT_NAME || 'AI Interpreter';
   botState.totalTranslations = 0;
   botState.sessionLog = [];
 
@@ -412,3 +444,4 @@ if (require.main === module) {
 }
 
 module.exports = app;
+module.exports.extractTranscriptPayload = extractTranscriptPayload;

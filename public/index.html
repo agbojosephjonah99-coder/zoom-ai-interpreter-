@@ -358,6 +358,8 @@
         <option value="de">German</option>
         <option value="pt">Portuguese</option>
       </select>
+      <label>Bot display name</label>
+      <input type="text" id="botName" value="AI Interpreter" placeholder="AI Interpreter">
       <label>French voice (OpenAI TTS)</label>
       <select id="voice">
         <option value="alloy">Alloy — neutral, clear</option>
@@ -369,6 +371,7 @@
       </select>
       <button class="btn btn-join" id="joinBtn" onclick="joinMeeting()">Send bot into meeting</button>
       <button class="btn btn-leave" id="leaveBtn" onclick="leaveMeeting()" disabled>Remove bot from meeting</button>
+      <p style="margin-top:10px;font-size:12px;color:var(--muted);line-height:1.5;">After the bot joins, the Zoom host should assign the displayed bot name to the French interpreter channel in Zoom's interpretation settings.</p>
     </div>
 
     <!-- Stats -->
@@ -514,11 +517,12 @@ async function joinMeeting() {
   const register = document.getElementById('register').value;
   const sourceLanguage = document.getElementById('sourceLang').value;
   const voice = document.getElementById('voice').value;
+  const botName = document.getElementById('botName').value.trim() || 'AI Interpreter';
 
   const res = await fetch('/api/join', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ meetingUrl, register, sourceLanguage, voice })
+    body: JSON.stringify({ meetingUrl, register, sourceLanguage, voice, botName })
   });
   const data = await res.json();
   if (!res.ok) alert('Error: ' + data.error);
