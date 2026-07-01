@@ -419,6 +419,28 @@ app.post('/api/leave', async (req, res) => {
   }
 });
 
+// Force remove the bot from the meeting (useful when normal leave fails)
+app.post('/api/force_leave', async (req, res) => {
+  try {
+    const botId = botState.botId;
+    if (botId) {
+      try {
+        await stopBot(botId);
+      } catch (err) {
+        console.error('Force leave: stopBot failed:', err?.message || err);
+      }
+    }
+
+    resetBotSession();
+    updateStatus('idle', 'Bot has been forcefully removed from the meeting');
+    return res.json({ success: true, forced: true });
+  } catch (err) {
+    console.error('Force leave failed:', err);
+    updateStatus('error', `Force leave failed: ${err.message}`);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/state', (req, res) => res.json(botState));
 
 // ── Test endpoint: translate + TTS without a live meeting ─────────────────────

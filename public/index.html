@@ -533,9 +533,17 @@ async function leaveMeeting() {
   const btn = document.getElementById('leaveBtn');
   btn.disabled = true;
   try {
-    const res = await fetch('/api/leave', { method: 'POST' });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || 'Unable to remove bot from meeting');
+    let res = await fetch('/api/leave', { method: 'POST' });
+    let data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      // Try force leave as a fallback
+      console.warn('Normal leave failed, attempting force leave', data.error);
+      const fRes = await fetch('/api/force_leave', { method: 'POST' });
+      const fData = await fRes.json().catch(() => ({}));
+      if (!fRes.ok) throw new Error(fData.error || 'Force remove failed');
+      // success
+      return;
+    }
   } catch (err) {
     console.error(err);
     alert('Error: ' + err.message);
