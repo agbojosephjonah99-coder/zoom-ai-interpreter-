@@ -75,6 +75,14 @@ function getMissingEnvVars() {
   return missing;
 }
 
+// A ~0.3s silent MP3, required as a placeholder so Recall.ai will treat the
+// bot as audio-output-capable (unmuted) from the moment it joins. Without
+// `automatic_audio_output` configured on Create Bot, (a) the Output Audio
+// endpoint rejects every call, and (b) the bot joins fully muted, which is
+// why Zoom's native Language Interpretation picker never lists it as an
+// eligible interpreter — Zoom only shows audio-active participants there.
+const SILENT_MP3_B64 = 'SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjYwLjE2LjEwMAAAAAAAAAAAAAAA//NYwAAAAAAAAAAAAEluZm8AAAAPAAAACwAAAkAAYGBgYGBgYGBgcHBwcHBwcHBwgICAgICAgICAkJCQkJCQkJCQoKCgoKCgoKCgsLCwsLCwsLCwwMDAwMDAwMDA0NDQ0NDQ0NDQ4ODg4ODg4ODg8PDw8PDw8PDw////////////AAAAAExhdmM2MC4zMQAAAAAAAAAAAAAAACQDwAAAAAAAAAJAxO40NAAAAAAAAAAAAAAA//MYxAAAAANIAAAAAExBTUUzLjEwMFVVVVVVVVVVVVVVVVVV//MYxBcAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MYxC4AAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MYxEUAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MYxFwAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MYxHMAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MYxIoAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MYxKEAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MYxLgAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MYxM8AAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MYxOYAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV';
+
 // ── Recall.ai ────────────────────────────────────────────────────────────────
 async function createBot(meetingUrl) {
   const res = await fetchWithTimeout('https://us-west-2.recall.ai/api/v1/bot/', {
@@ -86,6 +94,14 @@ async function createBot(meetingUrl) {
     body: JSON.stringify({
       meeting_url: meetingUrl,
       bot_name: botState.botName || 'AI Interpreter',
+      automatic_audio_output: {
+        in_call_recording: {
+          data: {
+            kind: 'mp3',
+            b64_data: SILENT_MP3_B64,
+          },
+        },
+      },
       recording_config: {
         transcript: {
           provider: {
