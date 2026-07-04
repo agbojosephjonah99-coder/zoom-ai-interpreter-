@@ -75,6 +75,12 @@ function getMissingEnvVars() {
   return missing;
 }
 
+// A ~0.3s silent MP3, required as a placeholder so Recall.ai treats the bot
+// as audio-output-capable from the moment it joins. Without
+// `automatic_audio_output` set on Create Bot, Recall's Output Audio endpoint
+// (used by sendAudioToBot below) rejects every call — this is Bug A.
+const SILENT_MP3_B64 = 'SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjYwLjE2LjEwMAAAAAAAAAAAAAAA//NYwAAAAAAAAAAAAEluZm8AAAAPAAAACwAAAkAAYGBgYGBgYGBgcHBwcHBwcHBwgICAgICAgICAkJCQkJCQkJCQoKCgoKCgoKCgsLCwsLCwsLCwwMDAwMDAwMDA0NDQ0NDQ0NDQ4ODg4ODg4ODg8PDw8PDw8PDw////////////AAAAAExhdmM2MC4zMQAAAAAAAAAAAAAAACQDwAAAAAAAAAJAxO40NAAAAAAAAAAAAAAA//MYxAAAAANIAAAAAExBTUUzLjEwMFVVVVVVVVVVVVVVVVVV//MYxBcAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MYxC4AAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MYxEUAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MYxFwAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MYxHMAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MYxIoAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MYxKEAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MYxLgAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MYxM8AAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//MYxOYAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV';
+
 // ── Recall.ai ────────────────────────────────────────────────────────────────
 async function createBot(meetingUrl) {
   const res = await fetchWithTimeout('https://us-west-2.recall.ai/api/v1/bot/', {
@@ -86,6 +92,11 @@ async function createBot(meetingUrl) {
     body: JSON.stringify({
       meeting_url: meetingUrl,
       bot_name: botState.botName || 'AI Interpreter',
+      automatic_audio_output: {
+        in_call_recording: {
+          data: { kind: 'mp3', b64_data: SILENT_MP3_B64 },
+        },
+      },
       recording_config: {
         transcript: {
           provider: {
@@ -331,6 +342,32 @@ app.post('/webhook/transcript', (req, res) => {
   })();
 });
 
+// ── Webhook: bot status changes (replaces polling — configure this URL in the
+// Recall Dashboard → Webhooks tab, e.g. https://your-app.vercel.app/webhook/status)
+app.post('/webhook/status', (req, res) => {
+  res.sendStatus(200);
+  try {
+    const { event, data } = req.body || {};
+    const botId = data?.bot?.id;
+    const code = data?.data?.code;
+    if (!botId || botId !== botState.botId) return; // ignore events for other/old bots
+
+    if (code === 'in_call_not_recording' || code === 'in_call_recording') {
+      updateStatus('listening', 'Bot is in the meeting and listening…');
+    } else if (code === 'fatal') {
+      updateStatus('error', 'Bot failed to join the meeting');
+      resetBotSession();
+    } else if (code === 'call_ended' || code === 'done') {
+      updateStatus('idle', 'Bot has left the meeting');
+      resetBotSession();
+    } else {
+      console.log(`[STATUS WEBHOOK] ${event}: ${code}`);
+    }
+  } catch (err) {
+    console.error('Status webhook processing failed:', err);
+  }
+});
+
 // ── REST API ──────────────────────────────────────────────────────────────────
 app.post('/api/join', async (req, res) => {
   const { meetingUrl, register, sourceLanguage, voice, botName } = req.body;
@@ -358,33 +395,10 @@ app.post('/api/join', async (req, res) => {
     updateStatus('joining', 'Sending bot into meeting…');
     const bot = await createBot(meetingUrl);
     botState.botId = bot.id;
-
-    // Poll until bot is confirmed in the call
-    let attempts = 0;
-    botState.joinPoller = setInterval(async () => {
-      if (!botState.botId) return;
-      attempts++;
-      try {
-        const status = await getBotStatus(botState.botId);
-        const code = status.status_changes?.slice(-1)[0]?.code;
-        if (code === 'in_call_not_recording' || code === 'in_call_recording') {
-          clearInterval(botState.joinPoller);
-          botState.joinPoller = null;
-          updateStatus('listening', 'Bot is in the meeting and listening…');
-        } else if (code === 'fatal' || attempts > 30) {
-          clearInterval(botState.joinPoller);
-          botState.joinPoller = null;
-          updateStatus('error', 'Bot failed to join the meeting');
-          resetBotSession();
-        }
-      } catch (err) {
-        clearInterval(botState.joinPoller);
-        botState.joinPoller = null;
-        updateStatus('error', `Bot status check failed: ${err.message}`);
-        resetBotSession();
-      }
-    }, 3000);
-
+    // NOTE: status is now driven entirely by the bot.status_change webhook
+    // (see /webhook/status below) instead of polling. You MUST add your
+    // webhook URL (e.g. https://your-app.vercel.app/webhook/status) in the
+    // Recall Dashboard → Webhooks tab — this cannot be set from createBot().
     res.json({ success: true, botId: bot.id });
   } catch (err) {
     updateStatus('error', err.message);
