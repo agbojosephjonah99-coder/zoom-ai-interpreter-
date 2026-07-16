@@ -311,6 +311,49 @@
   .wave span:nth-child(4){animation-delay:.3s}
   @keyframes wave{0%,100%{height:3px}50%{height:14px}}
 
+  .assign-banner {
+    display: none;
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 12.5px;
+    line-height: 1.55;
+    position: relative;
+  }
+  .assign-banner.show { display: block; }
+  .assign-banner .assign-title {
+    font-weight: 600;
+    font-size: 12px;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .assign-banner .assign-close {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    cursor: pointer;
+    background: none;
+    border: none;
+    color: inherit;
+    opacity: .6;
+    font-size: 14px;
+    line-height: 1;
+  }
+  .assign-banner .assign-close:hover { opacity: 1; }
+  .assign-banner.reminder {
+    background: var(--amber-bg);
+    border: 1px solid rgba(245,158,11,.3);
+    color: var(--text);
+  }
+  .assign-banner.reminder .assign-title { color: var(--amber); }
+  .assign-banner.warning {
+    background: var(--red-bg);
+    border: 1px solid rgba(239,68,68,.3);
+    color: var(--text);
+  }
+  .assign-banner.warning .assign-title { color: var(--red); }
+
   .test-area { display: flex; flex-direction: column; gap: 8px; }
   .test-area textarea { resize: vertical; min-height: 70px; }
   .test-result {
@@ -373,6 +416,18 @@
       <button class="btn btn-join" id="joinBtn" onclick="joinMeeting()">Send bot into meeting</button>
       <button class="btn btn-leave" id="leaveBtn" onclick="leaveMeeting()" disabled>Remove bot from meeting</button>
       <p style="margin-top:10px;font-size:12px;color:var(--muted);line-height:1.5;">Important: the meeting host must first open Zoom's Language Interpretation settings, enable a French channel, and then assign the bot participant as the French interpreter. The bot must already be in the meeting, and only the host can complete this assignment.</p>
+
+      <div class="assign-banner reminder" id="assignReminder">
+        <button class="assign-close" onclick="dismissBanner('assignReminder')" aria-label="Dismiss">✕</button>
+        <div class="assign-title">🎯 Assign the bot now</div>
+        <div id="assignReminderText"></div>
+      </div>
+
+      <div class="assign-banner warning" id="assignWarning">
+        <button class="assign-close" onclick="dismissBanner('assignWarning')" aria-label="Dismiss">✕</button>
+        <div class="assign-title">⚠️ No French audio yet</div>
+        <div id="assignWarningText"></div>
+      </div>
     </div>
 
     <!-- Stats -->
@@ -452,7 +507,31 @@ socket.on('status', ({ status, message }) => {
     clearInterval(timerInterval);
     sessionStart = null;
   }
+  if (status === 'idle' || status === 'joining') {
+    // Fresh session — clear any leftover banners from the last call.
+    dismissBanner('assignReminder');
+    dismissBanner('assignWarning');
+  }
 });
+
+socket.on('assignment_reminder', ({ message }) => {
+  document.getElementById('assignReminderText').textContent = message;
+  document.getElementById('assignReminder').classList.add('show');
+});
+
+socket.on('assignment_warning', ({ message }) => {
+  document.getElementById('assignWarningText').textContent = message;
+  document.getElementById('assignWarning').classList.add('show');
+});
+
+socket.on('assignment_resolved', () => {
+  dismissBanner('assignReminder');
+  dismissBanner('assignWarning');
+});
+
+function dismissBanner(id) {
+  document.getElementById(id).classList.remove('show');
+}
 
 function showCaption(text, speaker) {
   const captionCard = document.getElementById('captionCard');

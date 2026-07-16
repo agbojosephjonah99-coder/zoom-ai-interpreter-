@@ -101,6 +101,14 @@ npm start
 
 ---
 
+## Interpreter assignment reminders
+
+Zoom has no API to assign a bot as an interpreter automatically — the host must still do it manually from the meeting's Interpretation controls (see [Using the bot in a Zoom meeting](#using-the-bot-in-a-zoom-meeting)). To make that step harder to miss, the bot now:
+
+1. **Shows a dashboard banner** the moment it's confirmed inside the call, reminding the host to open Interpretation and assign it to the French channel.
+2. **Sends a one-time chat message in the meeting** with the same reminder, via Recall.ai's `send_chat_message` endpoint. This is best-effort — if it's unavailable on your Recall.ai plan, it fails silently and the dashboard reminder still shows.
+3. **Warns after ~3 minutes** if no French audio has gone out yet (`totalTranslations` still 0), in case the assignment step was missed. This is a proxy, not a direct read of Zoom's interpretation state — Zoom doesn't expose that via webhook — so it can also just mean no one has spoken yet. Once the first translation succeeds, both banners clear automatically.
+
 ## Troubleshooting
 
 **Bot doesn't join** → check RECALL_API_KEY and that the Zoom meeting is active.

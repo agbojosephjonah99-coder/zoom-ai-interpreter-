@@ -32,7 +32,22 @@ let botState = {
   sessionLog: [],
   totalTranslations: 0,
   joinPoller: null,
+  // Interpreter-assignment nudges: the host still has to manually move the
+  // bot into the French interpretation channel (Zoom gives us no API to do
+  // this for them — see README). These flags make sure we (a) remind them
+  // exactly once as soon as the bot is in the call, and (b) warn once if a
+  // while has passed with no translations, which usually means the
+  // assignment step got missed.
+  assignmentReminderSent: false,
+  assignmentWarningSent: false,
+  assignmentCheckTimer: null,
 };
+
+// How long to wait after the bot starts listening before checking whether
+// interpretation seems to be flowing. If nothing has been translated by
+// then, it's a reasonable signal the host forgot to assign the French
+// channel (or no one has spoken yet — the warning is phrased accordingly).
+const ASSIGNMENT_CHECK_DELAY_MS = 3 * 60 * 1000;
 
 function emit(event, data) { io.emit(event, data); }
 
@@ -47,11 +62,52 @@ function resetBotSession() {
     clearInterval(botState.joinPoller);
     botState.joinPoller = null;
   }
+  if (botState.assignmentCheckTimer) {
+    clearTimeout(botState.assignmentCheckTimer);
+    botState.assignmentCheckTimer = null;
+  }
   botState.botId = null;
   botState.meetingUrl = null;
   botState.lastTranslation = '';
   botState.sessionLog = [];
   botState.totalTranslations = 0;
+  botState.assignmentReminderSent = false;
+  botState.assignmentWarningSent = false;
+}
+
+// Fires once per session, the moment the bot is confirmed in the call:
+// (1) a dashboard banner reminding the host to assign the bot to the
+//     French interpreter channel, and (2) a best-effort chat message doing
+//     the same inside Zoom itself. It also arms a one-shot timer that warns
+//     if no translations have happened after a few minutes — the most
+//     reliable proxy we have for "the assignment step got missed", since
+//     Zoom doesn't expose interpreter-channel status via webhook.
+function notifyAssignmentStepIfNeeded() {
+  if (botState.assignmentReminderSent) return;
+  botState.assignmentReminderSent = true;
+
+  const reminder = 'Assign "AI Interpreter 🇫🇷" to the French channel now: Interpretation icon → find the bot → French.';
+  emit('assignment_reminder', { message: reminder, timestamp: new Date().toISOString() });
+
+  if (botState.botId) {
+    void sendChatMessage(
+      botState.botId,
+      `👋 I'm listening. Please open Language Interpretation and assign me ("${botState.botName}") to the French channel so I can speak.`
+    );
+  }
+
+  if (botState.assignmentCheckTimer) clearTimeout(botState.assignmentCheckTimer);
+  botState.assignmentCheckTimer = setTimeout(() => {
+    botState.assignmentCheckTimer = null;
+    if (botState.assignmentWarningSent) return;
+    if (botState.status === 'idle' || botState.status === 'error') return;
+    if (botState.totalTranslations > 0) return; // interpretation is flowing — no warning needed
+
+    botState.assignmentWarningSent = true;
+    const warning = 'No French audio has gone out yet. If no one has spoken, this is expected — otherwise, double-check the bot was assigned to the French interpreter channel.';
+    emit('assignment_warning', { message: warning, timestamp: new Date().toISOString() });
+    console.log(`[ASSIGNMENT CHECK] ${warning}`);
+  }, ASSIGNMENT_CHECK_DELAY_MS);
 }
 
 function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
@@ -146,6 +202,29 @@ async function sendAudioToBot(botId, audioBase64) {
   return res.ok;
 }
 
+// Best-effort chat nudge so the host sees the assignment instructions right
+// inside the Zoom chat, not just on the dashboard. This is a "nice to have":
+// if the Recall.ai plan/API doesn't support chat messages, or the call
+// fails for any reason, we swallow the error — it should never break the
+// interpretation pipeline.
+async function sendChatMessage(botId, message) {
+  try {
+    const res = await fetchWithTimeout(`https://us-west-2.recall.ai/api/v1/bot/${botId}/send_chat_message/`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Token ${process.env.RECALL_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ message })
+    });
+    if (!res.ok) {
+      console.log('[CHAT] Could not send in-meeting chat nudge:', await res.text());
+    }
+  } catch (err) {
+    console.log('[CHAT] Chat nudge failed (non-fatal):', err.message);
+  }
+}
+
 async function stopBot(botId) {
   await fetchWithTimeout(`https://us-west-2.recall.ai/api/v1/bot/${botId}/leave_call/`, {
     method: 'POST',
@@ -236,6 +315,16 @@ async function handleTranscript(speakerName, text) {
     const frenchText = await translateWithGPT(text);
     botState.lastTranslation = frenchText;
     botState.totalTranslations++;
+
+    // First confirmed translation of the session — the assignment clearly
+    // worked, so clear out any reminder/warning banners still showing.
+    if (botState.totalTranslations === 1) {
+      if (botState.assignmentCheckTimer) {
+        clearTimeout(botState.assignmentCheckTimer);
+        botState.assignmentCheckTimer = null;
+      }
+      emit('assignment_resolved', {});
+    }
 
     emit('translation', {
       english: text,
@@ -354,6 +443,7 @@ app.post('/webhook/status', (req, res) => {
 
     if (code === 'in_call_not_recording' || code === 'in_call_recording') {
       updateStatus('listening', 'Bot is in the meeting and listening…');
+      notifyAssignmentStepIfNeeded();
     } else if (code === 'fatal') {
       updateStatus('error', 'Bot failed to join the meeting');
       resetBotSession();
