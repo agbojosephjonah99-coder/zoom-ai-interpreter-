@@ -86,7 +86,9 @@ function notifyAssignmentStepIfNeeded() {
   if (botState.assignmentReminderSent) return;
   botState.assignmentReminderSent = true;
 
-  const reminder = 'Assign "AI Interpreter 🇫🇷" to the French channel now: Interpretation icon → find the bot → French.';
+  const reminder = isSignedInBotConfigured()
+    ? `Assign the bot to the French channel now: Interpretation icon → Add Interpreter → search for "${botState.botName}" (or the connected Zoom account name if it doesn't show).`
+    : `Assign "${botState.botName}" to the French channel now — note: if it doesn't appear in the search, this Zoom account isn't signed in (see README → Signed-in bot setup).`;
   emit('assignment_reminder', { message: reminder, timestamp: new Date().toISOString() });
 
   if (botState.botId) {
@@ -131,6 +133,31 @@ function getMissingEnvVars() {
   return missing;
 }
 
+// ── Zoom signed-in bots (ZAK) ──────────────────────────────────────────────
+// By default, Recall.ai bots join Zoom as anonymous guests. Zoom's
+// "Add interpreter" search box in the Language Interpretation panel only
+// lists participants who are signed into a real Zoom account — anonymous
+// guests never appear there, no matter what the host searches. Recall.ai's
+// fix is a "signed-in bot": we give it a Zoom ZAK token (a short-lived token
+// tied to a real Zoom account) via `zoom.zak_url` on bot creation, and Recall
+// re-fetches it from that URL for the life of the call. See:
+// https://docs.recall.ai/docs/zoom-signed-in-bots
+//
+// We use Recall's own OAuth-credential storage (rather than storing Zoom's
+// rotating refresh token ourselves) so this works cleanly on stateless
+// deployments like Vercel — see README for the one-time setup steps.
+function isSignedInBotConfigured() {
+  return Boolean(
+    process.env.RECALL_ZOOM_CREDENTIAL_ID &&
+    process.env.ZOOM_OAUTH_CLIENT_ID &&
+    process.env.ZOOM_OAUTH_CLIENT_SECRET
+  );
+}
+
+function zoomOAuthRedirectUri() {
+  return process.env.ZOOM_OAUTH_REDIRECT_URI || `${process.env.WEBHOOK_URL || ''}/auth/zoom/callback`;
+}
+
 // A ~0.3s silent MP3, required as a placeholder so Recall.ai treats the bot
 // as audio-output-capable from the moment it joins. Without
 // `automatic_audio_output` set on Create Bot, Recall's Output Audio endpoint
@@ -139,41 +166,49 @@ const SILENT_MP3_B64 = 'SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjYwLjE2LjEwMAAAAAAAAAAA
 
 // ── Recall.ai ────────────────────────────────────────────────────────────────
 async function createBot(meetingUrl) {
+  const body = {
+    meeting_url: meetingUrl,
+    bot_name: botState.botName || 'AI Interpreter',
+    automatic_audio_output: {
+      in_call_recording: {
+        data: { kind: 'mp3', b64_data: SILENT_MP3_B64 },
+      },
+    },
+    recording_config: {
+      transcript: {
+        provider: {
+          recallai_streaming: {
+            mode: 'prioritize_low_latency',
+            language_code: botState.sourceLanguage || 'en',
+          }
+        },
+        diarization: {
+          use_separate_streams_when_available: true,
+        }
+      },
+      realtime_endpoints: [
+        {
+          type: 'webhook',
+          url: `${process.env.WEBHOOK_URL}/webhook/transcript`,
+          events: ['transcript.data'],
+        }
+      ]
+    }
+  };
+
+  // Signed-in bot: makes the bot show up in Zoom's "Add interpreter" search
+  // (anonymous guest bots never do — see isSignedInBotConfigured above).
+  if (isSignedInBotConfigured()) {
+    body.zoom = { zak_url: `${process.env.WEBHOOK_URL}/webhook/zak` };
+  }
+
   const res = await fetchWithTimeout('https://us-west-2.recall.ai/api/v1/bot/', {
     method: 'POST',
     headers: {
       'Authorization': `Token ${process.env.RECALL_API_KEY}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      meeting_url: meetingUrl,
-      bot_name: botState.botName || 'AI Interpreter',
-      automatic_audio_output: {
-        in_call_recording: {
-          data: { kind: 'mp3', b64_data: SILENT_MP3_B64 },
-        },
-      },
-      recording_config: {
-        transcript: {
-          provider: {
-            recallai_streaming: {
-              mode: 'prioritize_low_latency',
-              language_code: botState.sourceLanguage || 'en',
-            }
-          },
-          diarization: {
-            use_separate_streams_when_available: true,
-          }
-        },
-        realtime_endpoints: [
-          {
-            type: 'webhook',
-            url: `${process.env.WEBHOOK_URL}/webhook/transcript`,
-            events: ['transcript.data'],
-          }
-        ]
-      }
-    })
+    body: JSON.stringify(body)
   });
 
   if (!res.ok) {
@@ -458,6 +493,95 @@ app.post('/webhook/status', (req, res) => {
   }
 });
 
+// ── Zoom signed-in bot setup (one-time OAuth flow — see README) ────────────
+// Visit /auth/zoom/start once, in a browser, signed into the dedicated Zoom
+// account you want your bot to authenticate as. It walks through Zoom's
+// OAuth consent, hands the resulting code to Recall (which stores and
+// rotates the underlying refresh token for us), and prints a
+// RECALL_ZOOM_CREDENTIAL_ID for you to copy into your env vars.
+app.get('/auth/zoom/start', (req, res) => {
+  if (!process.env.ZOOM_OAUTH_CLIENT_ID) {
+    return res.status(500).send('ZOOM_OAUTH_CLIENT_ID is not set. See README → Signed-in bot setup.');
+  }
+  const url = new URL('https://zoom.us/oauth/authorize');
+  url.searchParams.set('response_type', 'code');
+  url.searchParams.set('client_id', process.env.ZOOM_OAUTH_CLIENT_ID);
+  url.searchParams.set('redirect_uri', zoomOAuthRedirectUri());
+  res.redirect(url.toString());
+});
+
+app.get('/auth/zoom/callback', async (req, res) => {
+  const { code, error } = req.query;
+  if (error) return res.status(400).send(`Zoom returned an error: ${error}`);
+  if (!code) return res.status(400).send('Missing ?code= from Zoom.');
+
+  try {
+    const missing = ['RECALL_API_KEY', 'RECALL_ZOOM_OAUTH_APP_ID'].filter(k => !process.env[k]);
+    if (missing.length) throw new Error(`Missing env vars: ${missing.join(', ')}`);
+
+    const credRes = await fetchWithTimeout('https://us-west-2.recall.ai/api/v2/zoom-oauth-credentials/', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Token ${process.env.RECALL_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        oauth_app: process.env.RECALL_ZOOM_OAUTH_APP_ID,
+        authorization_code: { code, redirect_uri: zoomOAuthRedirectUri() },
+      })
+    });
+    if (!credRes.ok) throw new Error(await credRes.text());
+    const cred = await credRes.json();
+
+    res.send(`
+      <pre style="font-family:monospace;font-size:14px;padding:24px;line-height:1.6">
+✅ Zoom account connected.
+
+Copy this into your env vars as RECALL_ZOOM_CREDENTIAL_ID, then redeploy:
+
+RECALL_ZOOM_CREDENTIAL_ID=${cred.id}
+
+Once set (along with ZOOM_OAUTH_CLIENT_ID / ZOOM_OAUTH_CLIENT_SECRET),
+new bots will join Zoom "signed in" and become selectable in Zoom's
+Language Interpretation → Add Interpreter search.
+      </pre>
+    `);
+  } catch (err) {
+    console.error('Zoom OAuth callback failed:', err);
+    res.status(500).send(`Failed to connect Zoom account: ${err.message}`);
+  }
+});
+
+// The zoom.zak_url endpoint: Recall calls this (repeatedly, for the life of
+// the call) to fetch a fresh ZAK token for the bot to authenticate with.
+app.get('/webhook/zak', async (req, res) => {
+  try {
+    if (!isSignedInBotConfigured()) {
+      return res.status(500).send('Signed-in bot mode is not configured on this server.');
+    }
+    const tokenRes = await fetchWithTimeout(
+      `https://us-west-2.recall.ai/api/v2/zoom-oauth-credentials/${process.env.RECALL_ZOOM_CREDENTIAL_ID}/access-token/`,
+      { headers: { 'Authorization': `Token ${process.env.RECALL_API_KEY}` } }
+    );
+    if (!tokenRes.ok) throw new Error(`Recall access-token fetch failed: ${await tokenRes.text()}`);
+    const tokenData = await tokenRes.json();
+    const accessToken = tokenData.access_token || tokenData.token;
+    if (!accessToken) throw new Error('Recall access-token response missing token');
+
+    const zakRes = await fetchWithTimeout('https://api.zoom.us/v2/users/me/zak', {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+    if (!zakRes.ok) throw new Error(`Zoom ZAK fetch failed: ${await zakRes.text()}`);
+    const zakData = await zakRes.json();
+    if (!zakData.token) throw new Error('Zoom ZAK response missing token');
+
+    res.set('Content-Type', 'text/plain').send(zakData.token);
+  } catch (err) {
+    console.error('[ZAK] Failed to mint ZAK token:', err.message);
+    res.status(500).send('Failed to mint ZAK token');
+  }
+});
+
 // ── REST API ──────────────────────────────────────────────────────────────────
 app.post('/api/join', async (req, res) => {
   const { meetingUrl, register, sourceLanguage, voice, botName } = req.body;
@@ -545,7 +669,7 @@ app.post('/api/force_leave', async (req, res) => {
   }
 });
 
-app.get('/api/state', (req, res) => res.json(botState));
+app.get('/api/state', (req, res) => res.json({ ...botState, signedInBotEnabled: isSignedInBotConfigured() }));
 
 // ── Test endpoint: translate + TTS without a live meeting ─────────────────────
 app.post('/api/translate', async (req, res) => {
