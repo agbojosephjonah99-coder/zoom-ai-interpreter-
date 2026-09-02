@@ -51,6 +51,24 @@ const ASSIGNMENT_CHECK_DELAY_MS = 3 * 60 * 1000;
 
 function emit(event, data) { io.emit(event, data); }
 
+function sanitizeParticipantName(name) {
+  const cleaned = String(name || '').trim();
+  return cleaned || 'AI Interpreter';
+}
+
+function normalizeMeetingUrl(url) {
+  return String(url || '').trim();
+}
+
+function setMutedState(muted) {
+  return Boolean(muted);
+}
+
+function isBotInactiveError(message) {
+  if (typeof message !== 'string') return false;
+  return /completed|shutting|shut down|errored/i.test(message);
+}
+
 function updateStatus(status, message) {
   botState.status = status;
   emit('status', { status, message, timestamp: new Date().toISOString() });
@@ -507,6 +525,7 @@ app.get('/auth/zoom/start', (req, res) => {
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('client_id', process.env.ZOOM_OAUTH_CLIENT_ID);
   url.searchParams.set('redirect_uri', zoomOAuthRedirectUri());
+  url.searchParams.set('scope', 'user:read:zak user:read:user');
   res.redirect(url.toString());
 });
 
@@ -695,3 +714,7 @@ if (require.main === module) {
 
 module.exports = app;
 module.exports.extractTranscriptPayload = extractTranscriptPayload;
+module.exports.sanitizeParticipantName = sanitizeParticipantName;
+module.exports.normalizeMeetingUrl = normalizeMeetingUrl;
+module.exports.setMutedState = setMutedState;
+module.exports.isBotInactiveError = isBotInactiveError;
