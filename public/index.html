@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SPLN Interpreter</title>
-<script src="https://cdn.jsdelivr.net/npm/socket.io-client@4.7.5/dist/socket.io.min.js"></script>
+
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -483,7 +483,25 @@
 </main>
 
 <script>
-const socket = io();
+// SSE connection
+let lastEventId = 0;
+function connectSSE() {
+  const es = new EventSource('/api/events?lastId=' + lastEventId);
+  es.onmessage = (e) => {
+    try {
+      const p = JSON.parse(e.data);
+      if (p.id) lastEventId = p.id;
+      if (p.type === 'status') handleStatus(p.data);
+      if (p.type === 'translation') handleTranslation(p.data);
+      if (p.type === 'assignment_reminder') showBanner('assignReminder', p.data.message);
+      if (p.type === 'assignment_warning') showBanner('assignWarning', p.data.message);
+      if (p.type === 'assignment_resolved') { dismissBanner('assignReminder'); dismissBanner('assignWarning'); }
+      if (p.type === 'stats') document.getElementById('statCount').textContent = p.data.total;
+    } catch(e) {}
+  };
+  es.onerror = () => { es.close(); setTimeout(connectSSE, 3000); };
+}
+connectSSE();
 let sessionStart = null;
 let timerInterval = null;
 let translationCount = 0;
