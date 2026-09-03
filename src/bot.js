@@ -4,15 +4,11 @@
  */
 
 const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
 const fetch = (...args) => import('node-fetch').then(({ default: f }) => f(...args));
 const path = require('path');
 require('dotenv').config();
 
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
@@ -49,7 +45,7 @@ let botState = {
 // channel (or no one has spoken yet — the warning is phrased accordingly).
 const ASSIGNMENT_CHECK_DELAY_MS = 3 * 60 * 1000;
 
-function emit(event, data) { io.emit(event, data); }
+function emit(event, data) { // io.emit(event, data); }
 
 function sanitizeParticipantName(name) {
   const cleaned = String(name || '').trim();
@@ -709,7 +705,7 @@ app.post('/api/translate', async (req, res) => {
 const PORT = process.env.PORT || 3000;
 
 if (require.main === module) {
-  server.listen(PORT, () => console.log(`\n🎙️  Zoom Interpreter Bot running at http://localhost:${PORT}\n`));
+  app.listen(PORT, () => console.log(`\n🎙️  Zoom Interpreter Bot running at http://localhost:${PORT}\n`));
 }
 
 module.exports = app;
