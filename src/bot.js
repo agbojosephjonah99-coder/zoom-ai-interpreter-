@@ -49,7 +49,7 @@ function emit(event, data) { pushEvent(event, data); }
 
 function updateStatus(status, message) {
   botState.status = status;
-  emit('status', { status, message, timestamp: new Date().toISOString() });
+  pushEvent('status', { status, message, timestamp: new Date().toISOString() });
   console.log(`[${status.toUpperCase()}] ${message}`);
 }
 
@@ -85,7 +85,7 @@ function notifyAssignmentStepIfNeeded() {
   const reminder = isSignedInBotConfigured()
     ? `Assign the bot to the French channel now: Interpretation icon → Add Interpreter → search for "${botState.botName}" (or the connected Zoom account name if it doesn't show).`
     : `Assign "${botState.botName}" to the French channel now — note: if it doesn't appear in the search, this Zoom account isn't signed in (see README → Signed-in bot setup).`;
-  emit('assignment_reminder', { message: reminder, timestamp: new Date().toISOString() });
+  pushEvent('assignment_reminder', { message: reminder, timestamp: new Date().toISOString() });
 
   if (botState.botId) {
     void sendChatMessage(
@@ -103,7 +103,7 @@ function notifyAssignmentStepIfNeeded() {
 
     botState.assignmentWarningSent = true;
     const warning = 'No French audio has gone out yet. If no one has spoken, this is expected — otherwise, double-check the bot was assigned to the French interpreter channel.';
-    emit('assignment_warning', { message: warning, timestamp: new Date().toISOString() });
+    pushEvent('assignment_warning', { message: warning, timestamp: new Date().toISOString() });
     console.log(`[ASSIGNMENT CHECK] ${warning}`);
   }, ASSIGNMENT_CHECK_DELAY_MS);
 }
@@ -338,8 +338,8 @@ async function handleTranscript(speakerName, text) {
   if (!text || text.trim().length < 3) return;
 
   updateStatus('interpreting', `Translating: "${text.slice(0, 60)}…"`);
-  emit('transcript', { speaker: speakerName, text, timestamp: new Date().toISOString() });
-  emit('caption', { text: 'Translating…', speaker: speakerName, timestamp: new Date().toISOString() });
+  pushEvent('transcript', { speaker: speakerName, text, timestamp: new Date().toISOString() });
+  pushEvent('caption', { text: 'Translating…', speaker: speakerName, timestamp: new Date().toISOString() });
 
   try {
     // 1. Translate with GPT
@@ -354,16 +354,16 @@ async function handleTranscript(speakerName, text) {
         clearTimeout(botState.assignmentCheckTimer);
         botState.assignmentCheckTimer = null;
       }
-      emit('assignment_resolved', {});
+      pushEvent('assignment_resolved', {});
     }
 
-    emit('translation', {
+    pushEvent('translation', {
       english: text,
       french: frenchText,
       speaker: speakerName,
       timestamp: new Date().toISOString()
     });
-    emit('caption', {
+    pushEvent('caption', {
       text: frenchText,
       speaker: speakerName,
       timestamp: new Date().toISOString()
@@ -382,7 +382,7 @@ async function handleTranscript(speakerName, text) {
     if (botState.sessionLog.length > 50) botState.sessionLog.pop();
 
     updateStatus('listening', 'Listening for speech…');
-    emit('stats', { total: botState.totalTranslations, log: botState.sessionLog.slice(0, 10) });
+    pushEvent('stats', { total: botState.totalTranslations, log: botState.sessionLog.slice(0, 10) });
 
   } catch (err) {
     console.error('Pipeline error:', err);
@@ -681,6 +681,50 @@ app.post('/api/translate', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+
+// ── SSE clients ───────────────────────────────────────────────────────────────
+let sseClients = [];
+let eventId = 0;
+
+function pushEvent(type, data) {
+  const id = ++eventId;
+  const payload = { type, data, timestamp: new Date().toISOString(), id };
+  const msg = `id: ${id}\ndata: ${JSON.stringify(payload)}\n\n`;
+  sseClients = sseClients.filter(client => {
+    try { client.write(msg); return true; } catch { return false; }
+  });
+}
+
+// ── SSE endpoint ──────────────────────────────────────────────────────────────
+app.get('/api/events', (req, res) => {
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  res.flushHeaders();
+  res.write(`data: ${JSON.stringify({ type: 'state', data: { ...botState, signedInBotEnabled: isSignedInBotConfigured() } })}\n\n`);
+  sseClients.push(res);
+  req.on('close', () => { sseClients = sseClients.filter(c => c !== res); });
+});
+
+// ── Debug endpoint ────────────────────────────────────────────────────────────
+app.get('/api/debug', (req, res) => {
+  res.json({
+    signedInBotConfigured: isSignedInBotConfigured(),
+    hasRecallKey: Boolean(process.env.RECALL_API_KEY),
+    hasOpenAIKey: Boolean(process.env.OPENAI_API_KEY),
+    hasWebhookUrl: Boolean(process.env.WEBHOOK_URL),
+    hasCredentialId: Boolean(process.env.RECALL_ZOOM_CREDENTIAL_ID),
+    hasZoomClientId: Boolean(process.env.ZOOM_OAUTH_CLIENT_ID),
+    hasZoomClientSecret: Boolean(process.env.ZOOM_OAUTH_CLIENT_SECRET),
+    webhookUrl: process.env.WEBHOOK_URL,
+    botName: process.env.BOT_NAME,
+    status: botState.status,
+  });
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
