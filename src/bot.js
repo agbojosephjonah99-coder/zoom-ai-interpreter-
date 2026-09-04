@@ -318,7 +318,7 @@ async function synthesizeFrench(frenchText) {
       input: frenchText,
       voice: botState.voice,    // alloy | echo | fable | onyx | nova | shimmer
       response_format: 'mp3',
-      speed: 0.95,
+      speed: 1.0,
     })
   });
 
@@ -335,7 +335,7 @@ async function synthesizeFrench(frenchText) {
 
 // ── Core pipeline: transcript → translate → speak ─────────────────────────────
 async function handleTranscript(speakerName, text) {
-  if (!text || text.trim().length < 3) return;
+  if (!text || text.trim().length < 2) return;
 
   updateStatus('interpreting', `Translating: "${text.slice(0, 60)}…"`);
   pushEvent('transcript', { speaker: speakerName, text, timestamp: new Date().toISOString() });
