@@ -307,6 +307,7 @@ async function translateWithGPT(text) {
 
 // ── OpenAI: Text-to-Speech ────────────────────────────────────────────────────
 async function synthesizeFrench(frenchText) {
+  // Use longer timeout for TTS
   const res = await fetchWithTimeout('https://api.openai.com/v1/audio/speech', {
     method: 'POST',
     headers: {
