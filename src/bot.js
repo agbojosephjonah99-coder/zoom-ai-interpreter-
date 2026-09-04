@@ -727,6 +727,92 @@ app.get('/api/debug', (req, res) => {
   });
 });
 
+
+// ── Zoom Server-to-Server API (auto-assign interpreter) ───────────────────────
+async function getZoomServerToken() {
+  const credentials = Buffer.from(
+    `${process.env.ZOOM_S2S_CLIENT_ID}:${process.env.ZOOM_S2S_CLIENT_SECRET}`
+  ).toString('base64');
+
+  const res = await fetchWithTimeout(
+    `https://zoom.us/oauth/token?grant_type=account_credentials&account_id=${process.env.ZOOM_S2S_ACCOUNT_ID}`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${credentials}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      }
+    }
+  );
+
+  if (!res.ok) throw new Error(`Zoom S2S token failed: ${await res.text()}`);
+  const data = await res.json();
+  return data.access_token;
+}
+
+function extractMeetingId(meetingUrl) {
+  const match = meetingUrl.match(/\/j\/(\d+)/);
+  if (!match) throw new Error('Could not extract meeting ID from URL');
+  return match[1];
+}
+
+async function autoAssignInterpreter(meetingUrl, botEmail, fromLang = 'en', toLang = 'fr') {
+  if (!process.env.ZOOM_S2S_CLIENT_ID || !process.env.ZOOM_S2S_CLIENT_SECRET || !process.env.ZOOM_S2S_ACCOUNT_ID) {
+    console.log('[ZOOM API] S2S credentials not set — skipping auto-assign');
+    return false;
+  }
+
+  try {
+    const meetingId = extractMeetingId(meetingUrl);
+    const token = await getZoomServerToken();
+
+    // Step 1: Enable interpretation on the meeting
+    await fetchWithTimeout(`https://api.zoom.us/v2/meetings/${meetingId}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        settings: { language_interpretation: { enable: true } }
+      })
+    });
+    console.log('[ZOOM API] Language interpretation enabled');
+
+    // Step 2: Assign bot as interpreter
+    const langMap = { en: 'English', fr: 'French', es: 'Spanish', de: 'German', pt: 'Portuguese', ar: 'Arabic' };
+    const assignRes = await fetchWithTimeout(
+      `https://api.zoom.us/v2/meetings/${meetingId}/interpretation`,
+      {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          interpreters: [{
+            email: botEmail,
+            languages: [langMap[fromLang] || 'English', langMap[toLang] || 'French']
+          }]
+        })
+      }
+    );
+
+    if (assignRes.ok || assignRes.status === 204) {
+      console.log(`[ZOOM API] ✅ Bot ${botEmail} auto-assigned as ${fromLang}→${toLang} interpreter`);
+      pushEvent('zoom_assigned', { message: `Bot auto-assigned as ${fromLang.toUpperCase()}→${toLang.toUpperCase()} interpreter! Click Start in Zoom Language Interpretation.` });
+      return true;
+    } else {
+      const err = await assignRes.text();
+      console.warn('[ZOOM API] Assignment failed:', err);
+      return false;
+    }
+  } catch (err) {
+    console.error('[ZOOM API] Auto-assign error:', err.message);
+    return false;
+  }
+}
+
 // ── Start ─────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 
