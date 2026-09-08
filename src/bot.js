@@ -824,6 +824,31 @@ async function autoAssignInterpreter(meetingUrl, botEmail, fromLang = 'en', toLa
   }
 }
 
+
+// ── French audio queue for relay app ─────────────────────────────────────────
+let audioQueue = [];
+let audioQueueId = 0;
+
+function pushFrenchAudio(audioBase64) {
+  audioQueueId++;
+  audioQueue.push({ id: audioQueueId, audioBase64, ts: Date.now() });
+  // Keep only last 10 audio clips
+  if (audioQueue.length > 10) audioQueue.shift();
+  // Also push via SSE
+  pushEvent('french_audio', { audioBase64, id: audioQueueId });
+}
+
+// Relay app polls this to get latest French audio
+app.get('/api/latest-audio', (req, res) => {
+  const after = parseInt(req.query.after || '0');
+  const latest = audioQueue.filter(a => a.id > after).slice(-1)[0];
+  if (latest) {
+    res.json(latest);
+  } else {
+    res.json({ id: audioQueueId, audioBase64: null });
+  }
+});
+
 // ── Start ─────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 
