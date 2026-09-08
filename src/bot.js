@@ -162,11 +162,14 @@ const SILENT_MP3_B64 = 'SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjYwLjE2LjEwMAAAAAAAAAAA
 
 // ── Recall.ai ────────────────────────────────────────────────────────────────
 async function createBot(meetingUrl) {
- const body = {
-  ...
-  zoom: { ...(body.zoom || {}), interpreter_audio: true },
-  ...
-};
+  const body = {
+    meeting_url: meetingUrl,
+    bot_name: botState.botName || 'AI Interpreter',
+    automatic_audio_output: {
+      in_call_recording: {
+        data: { kind: 'mp3', b64_data: SILENT_MP3_B64 },
+      },
+    },
     zoom: {
       ...(body.zoom || {}),
       interpreter_audio: true,
