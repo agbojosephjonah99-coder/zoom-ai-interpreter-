@@ -170,10 +170,7 @@ async function createBot(meetingUrl) {
         data: { kind: 'mp3', b64_data: SILENT_MP3_B64 },
       },
     },
-    zoom: {
-      ...(body.zoom || {}),
-      interpreter_audio: true,
-    },
+
     recording_config: {
       transcript: {
         provider: {
