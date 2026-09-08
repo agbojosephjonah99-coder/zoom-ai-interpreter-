@@ -504,7 +504,7 @@ app.get('/auth/zoom/start', (req, res) => {
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('client_id', process.env.ZOOM_OAUTH_CLIENT_ID);
   url.searchParams.set('redirect_uri', zoomOAuthRedirectUri());
-  url.searchParams.set('scope', 'user:read:zak user:read:user');
+  url.searchParams.set('scope', 'user:read:zak user:read:user meeting:read:list_meetings meeting:read:local_recording_token');
   res.redirect(url.toString());
 });
 
