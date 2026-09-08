@@ -415,6 +415,7 @@
       </select>
       <button class="btn btn-join" id="joinBtn" onclick="joinMeeting()">Send bot into meeting</button>
       <button class="btn btn-leave" id="leaveBtn" onclick="leaveMeeting()" disabled>Remove bot from meeting</button>
+      <button class="btn" style="background:var(--red-bg);color:var(--red);border:1px solid rgba(239,68,68,.25);margin-top:4px" onclick="forceLeave()">⚠ Force remove (if stuck)</button>
       <p style="margin-top:10px;font-size:12px;color:var(--muted);line-height:1.5;">Important: the meeting host must first open Zoom's Language Interpretation settings, enable a French channel, and then assign the bot participant as the French interpreter. The bot must already be in the meeting, and only the host can complete this assignment.</p>
 
       <div class="assign-banner reminder" id="assignReminder">
@@ -624,6 +625,13 @@ async function joinMeeting() {
   });
   const data = await res.json();
   if (!res.ok) alert('Error: ' + data.error);
+}
+
+async function forceLeave() {
+  await fetch('/api/force_leave', { method: 'POST' });
+  document.getElementById('joinBtn').disabled = false;
+  document.getElementById('leaveBtn').disabled = true;
+  alert('Bot forcefully removed');
 }
 
 async function leaveMeeting() {
