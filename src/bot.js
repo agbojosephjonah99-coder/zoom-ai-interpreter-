@@ -170,6 +170,10 @@ async function createBot(meetingUrl) {
         data: { kind: 'mp3', b64_data: SILENT_MP3_B64 },
       },
     },
+    zoom: {
+      ...(body.zoom || {}),
+      interpreter_audio: true,
+    },
     recording_config: {
       transcript: {
         provider: {
@@ -222,14 +226,23 @@ async function getBotStatus(botId) {
 }
 
 async function sendAudioToBot(botId, audioBase64) {
+  // Send to interpreter channel specifically
   const res = await fetchWithTimeout(`https://us-west-2.recall.ai/api/v1/bot/${botId}/output_audio/`, {
     method: 'POST',
     headers: {
       'Authorization': `Token ${process.env.RECALL_API_KEY}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ b64_data: audioBase64, kind: 'mp3' })
+    body: JSON.stringify({
+      b64_data: audioBase64,
+      kind: 'mp3',
+      interpreter_audio: true,
+    })
   });
+  if (!res.ok) {
+    const err = await res.text();
+    console.error('[AUDIO] sendAudioToBot failed:', err);
+  }
   return res.ok;
 }
 
