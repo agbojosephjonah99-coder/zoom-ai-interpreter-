@@ -383,9 +383,15 @@ async function handleTranscript(speakerName, text) {
     // 2. Synthesize French audio with OpenAI TTS
     const audioBase64 = await synthesizeFrench(frenchText);
 
-    // 3. Inject audio back into meeting via Recall.ai
+    // 3. Push to relay app (VB-Cable → Zoom interpreter channel)
+    pushFrenchAudio(audioBase64);
+    console.log('[AUDIO] French audio pushed to relay app');
+
+    // Also try direct injection as fallback
     if (botState.botId) {
-      await sendAudioToBot(botState.botId, audioBase64);
+      await sendAudioToBot(botState.botId, audioBase64).catch(e =>
+        console.log('[AUDIO] Direct inject failed (expected):', e.message)
+      );
     }
 
     // 4. Log session
