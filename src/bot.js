@@ -387,12 +387,8 @@ async function handleTranscript(speakerName, text) {
     pushFrenchAudio(audioBase64);
     console.log('[AUDIO] French audio pushed to relay app');
 
-    // Also try direct injection as fallback
-    if (botState.botId) {
-      await sendAudioToBot(botState.botId, audioBase64).catch(e =>
-        console.log('[AUDIO] Direct inject failed (expected):', e.message)
-      );
-    }
+    // Bot does NOT inject audio - relay app handles French audio via VB-Cable
+    console.log('[AUDIO] Audio sent to relay only - bot silent in meeting');
 
     // 4. Log session
     botState.sessionLog.unshift({ english: text, french: frenchText, speaker: speakerName, ts: new Date().toISOString() });
