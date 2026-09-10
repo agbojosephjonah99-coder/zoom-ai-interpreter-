@@ -344,6 +344,53 @@ async function synthesizeFrench(frenchText) {
   return Buffer.from(buffer).toString('base64');
 }
 
+// ── Translate French → English ───────────────────────────────────────────────
+async function translateToEnglish(text) {
+  const res = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      max_tokens: 512,
+      temperature: 0.0,
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a professional simultaneous interpreter from French to English. Use formal professional English. Output ONLY the English translation — no preamble, no quotation marks.'
+        },
+        { role: 'user', content: text }
+      ]
+    })
+  });
+  if (!res.ok) throw new Error('FR→EN failed: ' + await res.text());
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content?.trim() || '';
+}
+
+async function detectLanguage(text) {
+  try {
+    const res = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        max_tokens: 5,
+        temperature: 0,
+        messages: [{ role: 'user', content: 'Reply with only "en" or "fr" — which language is this: "' + text.slice(0, 100) + '"' }]
+      })
+    });
+    const data = await res.json();
+    const lang = data.choices?.[0]?.message?.content?.trim().toLowerCase();
+    return lang?.includes('fr') ? 'fr' : 'en';
+  } catch { return 'en'; }
+}
+
 // ── Core pipeline: transcript → translate → speak ─────────────────────────────
 async function handleTranscript(speakerName, text) {
   if (!text || text.trim().length < 2) return;
@@ -353,8 +400,11 @@ async function handleTranscript(speakerName, text) {
   pushEvent('caption', { text: 'Translating…', speaker: speakerName, timestamp: new Date().toISOString() });
 
   try {
-    // 1. Translate with GPT
-    const frenchText = await translateWithGPT(text);
+    // 1. Detect language and translate both ways
+    const fromLang = await detectLanguage(text);
+    const toLang = fromLang === 'en' ? 'fr' : 'en';
+    console.log('[LANG] ' + fromLang.toUpperCase() + ' → ' + toLang.toUpperCase());
+    const frenchText = fromLang === 'en' ? await translateWithGPT(text) : await translateToEnglish(text);
     botState.lastTranslation = frenchText;
     botState.totalTranslations++;
 
@@ -369,8 +419,10 @@ async function handleTranscript(speakerName, text) {
     }
 
     pushEvent('translation', {
-      english: text,
-      french: frenchText,
+      english: fromLang === 'en' ? text : frenchText,
+      french: fromLang === 'fr' ? text : frenchText,
+      fromLang,
+      toLang,
       speaker: speakerName,
       timestamp: new Date().toISOString()
     });
@@ -381,7 +433,18 @@ async function handleTranscript(speakerName, text) {
     });
 
     // 2. Synthesize French audio with OpenAI TTS
-    const audioBase64 = await synthesizeFrench(frenchText);
+    // Synthesize in target language with appropriate voice
+    const ttsVoice = toLang === 'fr' ? (botState.voice || 'nova') : 'alloy';
+    const ttsRes = await fetchWithTimeout('https://api.openai.com/v1/audio/speech', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ model: 'tts-1', input: frenchText, voice: ttsVoice, response_format: 'mp3', speed: 0.95 })
+    });
+    if (!ttsRes.ok) throw new Error('TTS failed: ' + await ttsRes.text());
+    const audioBase64 = Buffer.from(await ttsRes.arrayBuffer()).toString('base64');
 
     // 3. Push to relay app (VB-Cable → Zoom interpreter channel)
     pushFrenchAudio(audioBase64);
