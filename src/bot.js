@@ -392,8 +392,24 @@ async function detectLanguage(text) {
 }
 
 // ── Core pipeline: transcript → translate → speak ─────────────────────────────
+// ── Deduplication: prevent same text being processed twice ──────────────────
+const recentTranscripts = new Map();
+
 async function handleTranscript(speakerName, text) {
   if (!text || text.trim().length < 2) return;
+
+  // Deduplicate — ignore if same text seen within 5 seconds
+  const key = text.trim().toLowerCase().slice(0, 100);
+  const now = Date.now();
+  if (recentTranscripts.has(key) && now - recentTranscripts.get(key) < 5000) {
+    console.log('[DEDUP] Skipping duplicate transcript:', text.slice(0, 50));
+    return;
+  }
+  recentTranscripts.set(key, now);
+  // Clean up old entries
+  for (const [k, t] of recentTranscripts) {
+    if (now - t > 10000) recentTranscripts.delete(k);
+  }
 
   updateStatus('interpreting', `Translating: "${text.slice(0, 60)}…"`);
   pushEvent('transcript', { speaker: speakerName, text, timestamp: new Date().toISOString() });
