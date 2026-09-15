@@ -580,10 +580,24 @@ app.post('/webhook/status', (req, res) => {
     if (code === 'in_call_not_recording' || code === 'in_call_recording') {
       botState.joinedAt = new Date().toISOString();
       updateStatus('listening', 'Bot is in the meeting and listening…');
+
+      // Get meeting title from Recall bot info
+      let meetingTitle = null;
+      try {
+        const botInfo = await fetchWithTimeout(
+          `https://us-west-2.recall.ai/api/v1/bot/${botState.botId}/`,
+          { headers: { 'Authorization': `Token ${process.env.RECALL_API_KEY}` } }
+        );
+        const botData = await botInfo.json();
+        meetingTitle = botData?.meeting_metadata?.topic || botData?.meeting?.topic || null;
+      } catch(e) { console.log('[MEETING] Could not fetch title:', e.message); }
+
+      botState.meetingTitle = meetingTitle;
       pushEvent('bot_joined', {
         joinedAt: botState.joinedAt,
         meetingUrl: botState.meetingUrl,
-        botName: botState.botName
+        botName: botState.botName,
+        meetingTitle,
       });
       notifyAssignmentStepIfNeeded();
     } else if (code === 'fatal') {
@@ -591,6 +605,7 @@ app.post('/webhook/status', (req, res) => {
       resetBotSession();
     } else if (code === 'call_ended' || code === 'done') {
       updateStatus('idle', 'Bot has left the meeting');
+      pushEvent('bot_left', { timestamp: new Date().toISOString() });
       resetBotSession();
     } else {
       console.log(`[STATUS WEBHOOK] ${event}: ${code}`);

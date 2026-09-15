@@ -432,21 +432,30 @@
     </div>
 
     <!-- Stats -->
-    <div class="card" id="meetingStatusCard" style="display:none">
-      <div class="card-title">Meeting status</div>
-      <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
+    <div class="card" id="meetingStatusCard" style="display:none;border:1px solid var(--border-accent);background:var(--accent-bg)">
+      <div class="card-title" style="color:var(--text-accent)">🟢 Live Meeting</div>
+      <div style="display:flex;flex-direction:column;gap:10px;font-size:13px">
         <div style="display:flex;align-items:center;gap:8px">
-          <span id="botStatusDot" style="width:10px;height:10px;border-radius:50%;background:var(--green);display:inline-block;animation:pulse 1.5s infinite"></span>
-          <span id="botStatusText" style="color:var(--green);font-weight:500">Bot is live in meeting</span>
+          <span style="width:10px;height:10px;border-radius:50%;background:var(--green);display:inline-block;animation:pulse 1.5s infinite;flex-shrink:0"></span>
+          <span id="botStatusText" style="color:var(--green);font-weight:600;font-size:14px">Bot is live in meeting</span>
         </div>
-        <div style="color:var(--muted);font-size:12px">
-          <span>Joined: </span><span id="joinedAtText">—</span>
-        </div>
-        <div style="color:var(--muted);font-size:12px;word-break:break-all">
-          <span>Meeting: </span><span id="meetingUrlText">—</span>
-        </div>
-        <div style="color:var(--muted);font-size:12px">
-          <span>Duration: </span><span id="durationText">—</span>
+        <div style="background:var(--surface2);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;justify-content:space-between">
+            <span style="color:var(--muted)">Meeting</span>
+            <span id="meetingTitleText" style="color:var(--text-primary);font-weight:500;text-align:right;max-width:60%">—</span>
+          </div>
+          <div style="display:flex;justify-content:space-between">
+            <span style="color:var(--muted)">Meeting ID</span>
+            <span id="meetingUrlText" style="color:var(--text-primary)">—</span>
+          </div>
+          <div style="display:flex;justify-content:space-between">
+            <span style="color:var(--muted)">Joined at</span>
+            <span id="joinedAtText" style="color:var(--text-primary)">—</span>
+          </div>
+          <div style="display:flex;justify-content:space-between">
+            <span style="color:var(--muted)">Duration</span>
+            <span id="durationText" style="color:var(--green);font-weight:500">—</span>
+          </div>
         </div>
       </div>
     </div>
@@ -520,6 +529,13 @@ function connectSSE() {
         const card = document.getElementById('meetingStatusCard');
         if (card) card.style.display = 'none';
         if (window.durationTimer) { clearInterval(window.durationTimer); window.durationTimer = null; }
+        const statusEl = document.getElementById('botStatusText');
+        if (statusEl) statusEl.textContent = 'Bot is live in meeting';
+      }
+      if (p.type === 'bot_left') {
+        const card = document.getElementById('meetingStatusCard');
+        if (card) card.style.display = 'none';
+        if (window.durationTimer) { clearInterval(window.durationTimer); window.durationTimer = null; }
       }
       if (p.type === 'stats') document.getElementById('statCount').textContent = p.data.total;
       if (p.type === 'bot_joined') {
@@ -541,11 +557,15 @@ function connectSSE() {
         if (p.data && p.data.meetingUrl) {
           const id = p.data.meetingUrl.match(/\/j\/(\d+)/)?.[1] || '—';
           const el = document.getElementById('meetingUrlText');
-          if (el) el.textContent = 'Meeting ID: ' + id;
+          if (el) el.textContent = id;
+        }
+        if (p.data && p.data.meetingTitle) {
+          const el = document.getElementById('meetingTitleText');
+          if (el) el.textContent = p.data.meetingTitle;
         }
         if (p.data && p.data.botName) {
           const el = document.getElementById('botStatusText');
-          if (el) el.textContent = p.data.botName + ' is live in meeting';
+          if (el) el.textContent = (p.data.botName || 'Bot') + ' is live in meeting';
         }
       }
     } catch(e) {}
