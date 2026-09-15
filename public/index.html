@@ -556,6 +556,8 @@ function connectSSE() {
       }
       if (p.type === 'stats') document.getElementById('statCount').textContent = p.data.total;
       if (p.type === 'bot_joined') {
+        // Show popup notification
+        alert('✅ Bot has joined the meeting and is listening!');
         const card = document.getElementById('meetingStatusCard');
         if (card) card.style.display = 'block';
         if (p.data && p.data.joinedAt) {
