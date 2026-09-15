@@ -581,24 +581,26 @@ app.post('/webhook/status', (req, res) => {
       botState.joinedAt = new Date().toISOString();
       updateStatus('listening', 'Bot is in the meeting and listening…');
 
-      // Get meeting title from Recall bot info
-      let meetingTitle = null;
-      try {
-        const botInfo = await fetchWithTimeout(
-          `https://us-west-2.recall.ai/api/v1/bot/${botState.botId}/`,
-          { headers: { 'Authorization': `Token ${process.env.RECALL_API_KEY}` } }
-        );
-        const botData = await botInfo.json();
-        meetingTitle = botData?.meeting_metadata?.topic || botData?.meeting?.topic || null;
-      } catch(e) { console.log('[MEETING] Could not fetch title:', e.message); }
+      // Fetch meeting title async without blocking
+      void (async () => {
+        let meetingTitle = null;
+        try {
+          const botInfo = await fetchWithTimeout(
+            `https://us-west-2.recall.ai/api/v1/bot/${botState.botId}/`,
+            { headers: { 'Authorization': `Token ${process.env.RECALL_API_KEY}` } }
+          );
+          const botData = await botInfo.json();
+          meetingTitle = botData?.meeting_metadata?.topic || botData?.meeting?.topic || null;
+        } catch(e) { console.log('[MEETING] Could not fetch title:', e.message); }
 
-      botState.meetingTitle = meetingTitle;
-      pushEvent('bot_joined', {
-        joinedAt: botState.joinedAt,
-        meetingUrl: botState.meetingUrl,
-        botName: botState.botName,
-        meetingTitle,
-      });
+        botState.meetingTitle = meetingTitle;
+        pushEvent('bot_joined', {
+          joinedAt: botState.joinedAt,
+          meetingUrl: botState.meetingUrl,
+          botName: botState.botName,
+          meetingTitle,
+        });
+      })();
       notifyAssignmentStepIfNeeded();
     } else if (code === 'fatal') {
       updateStatus('error', 'Bot failed to join the meeting');
