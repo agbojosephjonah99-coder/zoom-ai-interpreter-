@@ -516,7 +516,38 @@ function connectSSE() {
       if (p.type === 'assignment_reminder') showBanner('assignReminder', p.data.message);
       if (p.type === 'assignment_warning') showBanner('assignWarning', p.data.message);
       if (p.type === 'assignment_resolved') { dismissBanner('assignReminder'); dismissBanner('assignWarning'); }
+      if (p.type === 'status' && p.data.status === 'idle') {
+        const card = document.getElementById('meetingStatusCard');
+        if (card) card.style.display = 'none';
+        if (window.durationTimer) { clearInterval(window.durationTimer); window.durationTimer = null; }
+      }
       if (p.type === 'stats') document.getElementById('statCount').textContent = p.data.total;
+      if (p.type === 'bot_joined') {
+        const card = document.getElementById('meetingStatusCard');
+        if (card) card.style.display = 'block';
+        if (p.data && p.data.joinedAt) {
+          const joined = new Date(p.data.joinedAt);
+          const el = document.getElementById('joinedAtText');
+          if (el) el.textContent = joined.toLocaleTimeString();
+          if (window.durationTimer) clearInterval(window.durationTimer);
+          window.durationTimer = setInterval(() => {
+            const secs = Math.floor((Date.now() - joined.getTime()) / 1000);
+            const m = Math.floor(secs / 60);
+            const s = secs % 60;
+            const d = document.getElementById('durationText');
+            if (d) d.textContent = m + 'm ' + String(s).padStart(2,'0') + 's';
+          }, 1000);
+        }
+        if (p.data && p.data.meetingUrl) {
+          const id = p.data.meetingUrl.match(/\/j\/(\d+)/)?.[1] || '—';
+          const el = document.getElementById('meetingUrlText');
+          if (el) el.textContent = 'Meeting ID: ' + id;
+        }
+        if (p.data && p.data.botName) {
+          const el = document.getElementById('botStatusText');
+          if (el) el.textContent = p.data.botName + ' is live in meeting';
+        }
+      }
     } catch(e) {}
   };
   es.onerror = () => { es.close(); setTimeout(connectSSE, 3000); };

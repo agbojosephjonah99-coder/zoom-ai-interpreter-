@@ -87,12 +87,7 @@ function notifyAssignmentStepIfNeeded() {
     : `Assign "${botState.botName}" to the French channel now — note: if it doesn't appear in the search, this Zoom account isn't signed in (see README → Signed-in bot setup).`;
   pushEvent('assignment_reminder', { message: reminder, timestamp: new Date().toISOString() });
 
-  if (botState.botId) {
-    void sendChatMessage(
-      botState.botId,
-      `👋 I'm listening. Please open Language Interpretation and assign me ("${botState.botName}") to the French channel so I can speak.`
-    );
-  }
+  // Chat message disabled
 
   if (botState.assignmentCheckTimer) clearTimeout(botState.assignmentCheckTimer);
   botState.assignmentCheckTimer = setTimeout(() => {
@@ -583,7 +578,13 @@ app.post('/webhook/status', (req, res) => {
     if (!botId || botId !== botState.botId) return; // ignore events for other/old bots
 
     if (code === 'in_call_not_recording' || code === 'in_call_recording') {
+      botState.joinedAt = new Date().toISOString();
       updateStatus('listening', 'Bot is in the meeting and listening…');
+      pushEvent('bot_joined', {
+        joinedAt: botState.joinedAt,
+        meetingUrl: botState.meetingUrl,
+        botName: botState.botName
+      });
       notifyAssignmentStepIfNeeded();
     } else if (code === 'fatal') {
       updateStatus('error', 'Bot failed to join the meeting');
