@@ -398,17 +398,35 @@ const recentTranscripts = new Map();
 async function handleTranscript(speakerName, text) {
   if (!text || text.trim().length < 2) return;
 
-  // Deduplicate — ignore if same text seen within 5 seconds
-  const key = text.trim().toLowerCase().slice(0, 100);
+  // Deduplicate — ignore if similar text seen within 15 seconds
+  const key = text.trim().toLowerCase().slice(0, 80);
   const now = Date.now();
-  if (recentTranscripts.has(key) && now - recentTranscripts.get(key) < 5000) {
-    console.log('[DEDUP] Skipping duplicate transcript:', text.slice(0, 50));
-    return;
+
+  // Check similarity against recent transcripts
+  for (const [recentKey, recentTime] of recentTranscripts) {
+    if (now - recentTime > 15000) continue;
+    // Check if texts are very similar (one contains the other)
+    const shorter = key.length < recentKey.length ? key : recentKey;
+    const longer = key.length < recentKey.length ? recentKey : key;
+    if (longer.includes(shorter) && shorter.length > 10) {
+      console.log('[DEDUP] Skipping similar transcript:', text.slice(0, 50));
+      return;
+    }
+    // Check if texts share >70% of words
+    const words1 = new Set(key.split(' ').filter(w => w.length > 2));
+    const words2 = new Set(recentKey.split(' ').filter(w => w.length > 2));
+    const common = [...words1].filter(w => words2.has(w)).length;
+    const similarity = common / Math.max(words1.size, words2.size);
+    if (similarity > 0.7) {
+      console.log('[DEDUP] Skipping similar transcript (similarity: ' + Math.round(similarity*100) + '%):', text.slice(0, 50));
+      return;
+    }
   }
+
   recentTranscripts.set(key, now);
   // Clean up old entries
   for (const [k, t] of recentTranscripts) {
-    if (now - t > 10000) recentTranscripts.delete(k);
+    if (now - t > 30000) recentTranscripts.delete(k);
   }
 
   updateStatus('interpreting', `Translating: "${text.slice(0, 60)}…"`);
