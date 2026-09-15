@@ -432,6 +432,25 @@
     </div>
 
     <!-- Stats -->
+    <div class="card" id="meetingStatusCard" style="display:none">
+      <div class="card-title">Meeting status</div>
+      <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span id="botStatusDot" style="width:10px;height:10px;border-radius:50%;background:var(--green);display:inline-block;animation:pulse 1.5s infinite"></span>
+          <span id="botStatusText" style="color:var(--green);font-weight:500">Bot is live in meeting</span>
+        </div>
+        <div style="color:var(--muted);font-size:12px">
+          <span>Joined: </span><span id="joinedAtText">—</span>
+        </div>
+        <div style="color:var(--muted);font-size:12px;word-break:break-all">
+          <span>Meeting: </span><span id="meetingUrlText">—</span>
+        </div>
+        <div style="color:var(--muted);font-size:12px">
+          <span>Duration: </span><span id="durationText">—</span>
+        </div>
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-title">Session stats</div>
       <div class="stat-row">

@@ -698,6 +698,8 @@ app.post('/api/join', async (req, res) => {
   }
 
   botState.meetingUrl = meetingUrl;
+  botState.meetingName = null;
+  botState.joinedAt = null;
   botState.register = register || 'formal';
   botState.sourceLanguage = sourceLanguage || 'en';
   botState.voice = voice || 'alloy';
@@ -776,7 +778,12 @@ app.post('/api/force_leave', async (req, res) => {
   }
 });
 
-app.get('/api/state', (req, res) => res.json({ ...botState, signedInBotEnabled: isSignedInBotConfigured() }));
+app.get('/api/state', (req, res) => res.json({
+  ...botState,
+  signedInBotEnabled: isSignedInBotConfigured(),
+  meetingName: botState.meetingName,
+  joinedAt: botState.joinedAt,
+}));
 
 // ── Test endpoint: translate + TTS without a live meeting ─────────────────────
 app.post('/api/translate', async (req, res) => {
