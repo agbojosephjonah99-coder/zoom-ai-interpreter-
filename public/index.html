@@ -550,6 +550,11 @@ socket.on('status', ({ status, message }) => {
     dismissBanner('assignReminder');
     dismissBanner('assignWarning');
   }
+  if (status === 'idle') {
+    const card = document.getElementById('meetingStatusCard');
+    if (card) card.style.display = 'none';
+    if (window.durationTimer) { clearInterval(window.durationTimer); window.durationTimer = null; }
+  }
 });
 
 socket.on('assignment_reminder', ({ message }) => {
