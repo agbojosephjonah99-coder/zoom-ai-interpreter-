@@ -383,6 +383,34 @@
   <!-- Sidebar -->
   <aside class="sidebar">
 
+    <div class="card" id="meetingStatusCard" style="display:none;border:1px solid var(--border-accent);background:var(--accent-bg)">
+      <div class="card-title" style="color:var(--text-accent)">🟢 Live Meeting</div>
+      <div style="display:flex;flex-direction:column;gap:10px;font-size:13px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="width:10px;height:10px;border-radius:50%;background:var(--green);display:inline-block;animation:pulse 1.5s infinite;flex-shrink:0"></span>
+          <span id="botStatusText" style="color:var(--green);font-weight:600">Bot is live in meeting</span>
+        </div>
+        <div style="background:var(--surface2);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;justify-content:space-between;gap:8px">
+            <span style="color:var(--muted);white-space:nowrap">Meeting</span>
+            <span id="meetingTitleText" style="color:var(--text-primary);font-weight:500;text-align:right">—</span>
+          </div>
+          <div style="display:flex;justify-content:space-between">
+            <span style="color:var(--muted)">Meeting ID</span>
+            <span id="meetingUrlText" style="color:var(--text-primary)">—</span>
+          </div>
+          <div style="display:flex;justify-content:space-between">
+            <span style="color:var(--muted)">Joined at</span>
+            <span id="joinedAtText" style="color:var(--text-primary)">—</span>
+          </div>
+          <div style="display:flex;justify-content:space-between">
+            <span style="color:var(--muted)">Duration</span>
+            <span id="durationText" style="color:var(--green);font-weight:500">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Join meeting -->
     <div class="card">
       <div class="card-title">Join meeting as interpreter</div>
@@ -692,13 +720,13 @@ async function joinMeeting() {
 }
 
 async function forceLeave() {
-  await fetch('/api/force_leave', { method: 'POST' });
+  const res = await fetch('/api/force_leave', { method: 'POST' });
   document.getElementById('joinBtn').disabled = false;
   document.getElementById('leaveBtn').disabled = true;
-  // Immediately hide meeting status card
   const card = document.getElementById('meetingStatusCard');
   if (card) card.style.display = 'none';
   if (window.durationTimer) { clearInterval(window.durationTimer); window.durationTimer = null; }
+  if (res.ok) alert('✅ Bot has been removed from the meeting');
 }
 
 async function leaveMeeting() {
@@ -757,17 +785,4 @@ fetch('/api/state').then(r => r.json()).then(state => {
 });
 </script>
 </body>
-</html<div class="card" id="meetingStatusCard" style="display:none;border:1px solid var(--border-accent);background:var(--accent-bg)">
-      <div class="card-title" style="color:var(--text-accent)">🟢 Live Meeting</div>
-      <div style="display:flex;flex-direction:column;gap:10px;font-size:13px">
-        <div style="display:flex;align-items:center;gap:8px">
-          <span style="width:10px;height:10px;border-radius:50%;background:var(--green);display:inline-block;animation:pulse 1.5s infinite;flex-shrink:0"></span>
-          <span id="botStatusText" style="color:var(--green);font-weight:600;font-size:14px">Bot is live in meeting</span>
-        </div>
-        <div style="background:var(--surface2);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:6px">
-          <div style="display:flex;justify-content:space-between">
-            <span style="color:var(--muted)">Meeting</span>
-            <span id="meetingTitleText" style="color:var(--text-primary);font-weight:500;text-align:right;max-width:60%">—</span>
-          </div>
-
-    >
+</html>
