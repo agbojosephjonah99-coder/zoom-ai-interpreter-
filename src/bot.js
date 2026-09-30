@@ -387,42 +387,51 @@ async function detectLanguage(text) {
 }
 
 // ── Core pipeline: transcript → translate → speak ─────────────────────────────
-// ── Deduplication: prevent same text being processed twice ──────────────────
-const recentTranscripts = new Map();
+// ── Speech buffer: wait for speaker to finish before translating ─────────────
+const speakerTimers = new Map();
+const speakerBuffers = new Map();
 
 async function handleTranscript(speakerName, text) {
   if (!text || text.trim().length < 2) return;
 
-  // Deduplicate — ignore if similar text seen within 15 seconds
-  const key = text.trim().toLowerCase().slice(0, 80);
-  const now = Date.now();
+  // Buffer text per speaker — wait 1.5s after last chunk before processing
+  // This merges incremental Recall transcripts into one complete utterance
+  const existing = speakerBuffers.get(speakerName) || '';
+  
+  // If new text contains or extends the existing buffer, update it
+  const newText = text.trim();
+  const bufText = existing.trim();
+  
+  let merged;
+  if (newText.includes(bufText) || newText.length > bufText.length) {
+    merged = newText; // new text is longer/contains old — use new
+  } else if (bufText.includes(newText)) {
+    merged = bufText; // old text already contains new — keep old
+  } else {
+    merged = newText; // completely different — use new
+  }
+  
+  speakerBuffers.set(speakerName, merged);
 
-  // Check similarity against recent transcripts
-  for (const [recentKey, recentTime] of recentTranscripts) {
-    if (now - recentTime > 15000) continue;
-    // Check if texts are very similar (one contains the other)
-    const shorter = key.length < recentKey.length ? key : recentKey;
-    const longer = key.length < recentKey.length ? recentKey : key;
-    if (longer.includes(shorter) && shorter.length > 10) {
-      console.log('[DEDUP] Skipping similar transcript:', text.slice(0, 50));
-      return;
-    }
-    // Check if texts share >70% of words
-    const words1 = new Set(key.split(' ').filter(w => w.length > 2));
-    const words2 = new Set(recentKey.split(' ').filter(w => w.length > 2));
-    const common = [...words1].filter(w => words2.has(w)).length;
-    const similarity = common / Math.max(words1.size, words2.size);
-    if (similarity > 0.7) {
-      console.log('[DEDUP] Skipping similar transcript (similarity: ' + Math.round(similarity*100) + '%):', text.slice(0, 50));
-      return;
-    }
+  // Clear existing timer for this speaker
+  if (speakerTimers.has(speakerName)) {
+    clearTimeout(speakerTimers.get(speakerName));
   }
 
-  recentTranscripts.set(key, now);
-  // Clean up old entries
-  for (const [k, t] of recentTranscripts) {
-    if (now - t > 30000) recentTranscripts.delete(k);
-  }
+  // Set new timer — process after 1.5s silence
+  const timer = setTimeout(async () => {
+    speakerTimers.delete(speakerName);
+    const finalText = speakerBuffers.get(speakerName) || '';
+    speakerBuffers.delete(speakerName);
+    if (finalText.trim().length > 2) {
+      await processTranscript(speakerName, finalText.trim());
+    }
+  }, 1500);
+
+  speakerTimers.set(speakerName, timer);
+}
+
+async function processTranscript(speakerName, text) {
 
   updateStatus('interpreting', `Translating: "${text.slice(0, 60)}…"`);
   pushEvent('transcript', { speaker: speakerName, text, timestamp: new Date().toISOString() });
