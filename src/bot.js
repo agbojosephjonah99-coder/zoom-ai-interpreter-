@@ -423,10 +423,13 @@ async function handleTranscript(speakerName, text) {
     speakerTimers.delete(speakerName);
     const finalText = speakerBuffers.get(speakerName) || '';
     speakerBuffers.delete(speakerName);
-    if (finalText.trim().length > 2) {
+    const words = finalText.trim().split(' ').filter(w => w.length > 0);
+    if (words.length >= 4) {
       await processTranscript(speakerName, finalText.trim());
+    } else {
+      console.log('[SKIP] Too short to interpret:', finalText.trim());
     }
-  }, 1500);
+  }, 2500);
 
   speakerTimers.set(speakerName, timer);
 }
