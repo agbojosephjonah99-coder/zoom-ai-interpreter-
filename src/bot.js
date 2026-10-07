@@ -402,13 +402,18 @@ async function handleTranscript(speakerName, text) {
   const newText = text.trim();
   const bufText = existing.trim();
   
+  // Always use the longer/more complete version
+  // Recall sends corrections — later versions are more accurate
   let merged;
-  if (newText.includes(bufText) || newText.length > bufText.length) {
-    merged = newText; // new text is longer/contains old — use new
-  } else if (bufText.includes(newText)) {
-    merged = bufText; // old text already contains new — keep old
+  const newWords = newText.split(' ').length;
+  const bufWords = bufText.split(' ').length;
+
+  if (newText.length >= bufText.length) {
+    merged = newText; // new is longer or equal — use new (it's the correction)
+  } else if (bufText.includes(newText.slice(0, 20))) {
+    merged = bufText; // old already contains start of new — keep old
   } else {
-    merged = newText; // completely different — use new
+    merged = newText; // different sentence entirely
   }
   
   speakerBuffers.set(speakerName, merged);
@@ -429,7 +434,7 @@ async function handleTranscript(speakerName, text) {
     } else {
       console.log('[SKIP] Fragment too short:', finalText.trim());
     }
-  }, 1000);
+  }, 2000);
 
   speakerTimers.set(speakerName, timer);
 }
