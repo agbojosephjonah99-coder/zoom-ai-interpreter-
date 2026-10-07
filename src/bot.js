@@ -418,18 +418,18 @@ async function handleTranscript(speakerName, text) {
     clearTimeout(speakerTimers.get(speakerName));
   }
 
-  // Set new timer — process after 1.5s silence
+  // Set new timer — process after 1s natural pause (simultaneous interpretation)
   const timer = setTimeout(async () => {
     speakerTimers.delete(speakerName);
     const finalText = speakerBuffers.get(speakerName) || '';
     speakerBuffers.delete(speakerName);
     const words = finalText.trim().split(' ').filter(w => w.length > 0);
-    if (words.length >= 4) {
+    if (words.length >= 5) {
       await processTranscript(speakerName, finalText.trim());
     } else {
-      console.log('[SKIP] Too short to interpret:', finalText.trim());
+      console.log('[SKIP] Fragment too short:', finalText.trim());
     }
-  }, 2500);
+  }, 1000);
 
   speakerTimers.set(speakerName, timer);
 }
